@@ -2,7 +2,7 @@
 import assert from 'node:assert'
 import { deriveKey, seal, unseal } from '../src/crypto.ts'
 import { newKeyPair, sharedKey, sealEnvelope, openEnvelope, safetyCode, extractCode } from '../src/envelope.ts'
-import { loops, tokens, canRequestMood, contractLine, questionOfDay, type Ev } from '../src/logic.ts'
+import { loops, tokens, canRequestMood, contractLine, questionOfDay, prune, type Ev } from '../src/logic.ts'
 
 // Vault: right PIN opens, wrong PIN fails, nothing in clear.
 const salt = crypto.getRandomValues(new Uint8Array(16))
@@ -43,6 +43,12 @@ assert.strictEqual(contractLine('A', 'B', 'Switch', 'Sub'), 'Moi, A, prends poss
 const bank = ['q1', 'q2', 'q3']
 assert.strictEqual(questionOfDay([], 'seed', D2, bank).text, questionOfDay([], 'seed', D2, bank).text)
 assert.strictEqual(questionOfDay([ev('a', D2, { type: 'question', text: 'mienne' })], 'seed', D2, bank).text, 'mienne')
+// Secret reset: today's game is wiped (even if resent later), other days and signatures stay.
+const old = { ...ev('a', D2, { type: 'moodRequest', role: 'Dom' }), at: '2026-10-16T10:00' }
+const sign = { ...ev('a', D2, { type: 'sign', path: 'M0 0' }), at: '2026-10-16T10:00' }
+const reset = { ...ev('a', D2, { type: 'reset' }), at: '2026-10-16T11:00' }
+const after = { ...ev('a', D2, { type: 'moodRequest', role: 'Dom' }), at: '2026-10-16T12:00' }
+assert.deepStrictEqual(prune([old, sign, reset, after, req]).map((e) => e.id), [sign.id, reset.id, after.id, req.id])
 console.log('all checks ok')
 
 // The pairing QR must decode with the scanner we ship.

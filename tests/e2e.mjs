@@ -189,13 +189,31 @@ try {
     assert.strictEqual(await B.locator('.top .pill').innerText(), 'Sub')
   })
 
-  await check('Verrouillage automatique dès que l’app passe en arrière-plan', async () => {
-    await B.evaluate(() => {
+  const hide = (p) =>
+    p.evaluate(() => {
       Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
       document.dispatchEvent(new Event('visibilitychange'))
-      delete document.visibilityState
     })
+  const show = (p) =>
+    p.evaluate(() => {
+      delete document.visibilityState
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+
+  await check('Verrouillage : un aller-retour rapide vers une autre app ne redemande pas le PIN', async () => {
+    await hide(B)
+    await B.context().clock.setFixedTime(new Date('2026-10-16T20:01:00'))
+    await show(B)
+    await B.locator('.home').waitFor()
+    assert.strictEqual(await B.getByText('Entre ton code').count(), 0)
+  })
+
+  await check('Verrouillage : PIN redemandé après plus de 5 minutes en arrière-plan', async () => {
+    await hide(B)
+    await B.context().clock.setFixedTime(new Date('2026-10-16T20:08:00'))
+    await show(B)
     await B.getByText('Entre ton code').waitFor()
+    await B.context().clock.setFixedTime(DAY(16))
     await open(B, PIN_B, 'Sub')
   })
 
@@ -415,6 +433,12 @@ try {
     await tab(B, 'Tâche du jour')
     await btn(A, 'Demander ton mood').click()
     await deliver(B, await grab(A))
+    assert.strictEqual(await btn(B, 'Safeword').count(), 0, 'no safeword before a task is received')
+    await btn(B, 'Valider').click()
+    await deliver(A, await grab(B))
+    await A.getByPlaceholder('Écris la tâche, adaptée à ce mood').fill('Mets-toi à genoux.')
+    await btn(A, 'Envoyer la tâche').click()
+    await deliver(B, await grab(A))
     await btn(B, 'Safeword').click()
     await btn(B, /^Prononcer le safeword/).click()
     await deliver(A, await grab(B))
@@ -474,6 +498,22 @@ try {
   await check('Jour 5 : contrat « deux Dom »', async () => {
     await tab(A, 'Contrat')
     assert.match(await A.locator('.conclusion').innerText(), /défie Velours de me faire plier/)
+  })
+
+  await check('Test secret : 7 touches sur le logo réinitialisent la journée des deux côtés', async () => {
+    await A.locator('.top .logo').click({ clickCount: 1 })
+    for (let i = 0; i < 6; i++) await A.locator('.top .logo').click()
+    for (const c of ctxs) await c.clock.setFixedTime(new Date('2026-10-20T20:05:00'))
+    await btn(A, 'Réinitialiser').click()
+    const link = await grab(A)
+    await deliver(B, link)
+    await tab(A, 'Tâche du jour')
+    await tab(B, 'Tâche du jour')
+    await btn(A, 'Demander ton mood').waitFor()
+    await btn(B, 'Demander ton mood').waitFor()
+    assert.doesNotMatch(await panel(A), /sans tâche/)
+    await open(A, PIN_A, 'Dom')
+    assert.strictEqual(await A.locator('.top .pill').innerText(), 'Dom')
   })
 
   await check('Sécurité : lien modifié refusé', async () => {

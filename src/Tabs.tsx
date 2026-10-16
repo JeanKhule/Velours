@@ -146,7 +146,8 @@ export function TaskTab({ ctx }: { ctx: Ctx }) {
           <p>En attente d'une demande de mood de {state.partner!.pseudo}.</p>
         </div>
       )}
-      {!stopped && todays.some((l) => l.req.by !== state.me.id && ['mood', 'tache', 'encours'].includes(l.status)) && <Safeword act={act} />}
+      {/* The safeword refuses a task: only once one has actually been received. */}
+      {!stopped && todays.some((l) => l.req.by !== state.me.id && l.status === 'encours') && <Safeword act={act} />}
     </div>
   )
 }

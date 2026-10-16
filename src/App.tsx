@@ -2,11 +2,12 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'rea
 import logoSvg from './logo.svg?raw'
 import { createProfile, hasProfile, save, unlock, wipe, type Session, type State } from './vault'
 import { extractCode, openEnvelope, safetyCode, sealEnvelope, sharedKey } from './envelope'
-import { dayOf, tokens, type Ev, type NewEv, type Role } from './logic'
+import { dayOf, prune, tokens, type Ev, type NewEv, type Role } from './logic'
 import { MyQr, Pair } from './Pair'
 import { Contract, History, QuestionTab, TaskTab } from './Tabs'
 
 type Stage = 'loading' | 'setup' | 'locked' | 'role' | 'home'
+const LOCK_AFTER = 5 * 60_000
 
 // What one phone sends the other: its identity, today's role and its own recent events.
 type Payload = { v: 1; from: string; pseudo: string; role: Role; day: string; events: Ev[] }
@@ -47,16 +48,21 @@ export default function App() {
     hasProfile().then((yes) => setStage(yes ? 'locked' : 'setup'))
   }, [])
 
-  // Lock as soon as the app leaves the screen: the keys only live in memory.
+  // A web app cannot see the phone being locked: ask the PIN again after LOCK_AFTER in the background
+  // (or on a cold start, since the keys only live in memory). A quick hop to Messages keeps it open.
   useEffect(() => {
-    const lock = () => {
-      if (document.visibilityState !== 'hidden') return
-      setSession(null)
-      setRole(null)
-      setStage((s) => (s === 'role' || s === 'home' ? 'locked' : s))
+    let hiddenAt = 0
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') return void (hiddenAt = Date.now())
+      if (hiddenAt && Date.now() - hiddenAt > LOCK_AFTER) {
+        setSession(null)
+        setRole(null)
+        setStage((s) => (s === 'role' || s === 'home' ? 'locked' : s))
+      }
+      hiddenAt = 0
     }
-    document.addEventListener('visibilitychange', lock)
-    return () => document.removeEventListener('visibilitychange', lock)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
   }, [])
 
   // The role is chosen once per day: reopening the same day goes straight home.
@@ -244,7 +250,8 @@ function Home({ session, role, onLock }: { session: Session; role: Role; onLock:
   const [state, setState] = useState(session.state)
   const [key, setKey] = useState<CryptoKey | null>(null)
   const [tab, setTab] = useState<Tab>('Question du jour')
-  const [sheet, setSheet] = useState<'' | 'send' | 'receive' | 'settings' | 'pair'>('')
+  const [sheet, setSheet] = useState<'' | 'send' | 'receive' | 'settings' | 'pair' | 'reset'>('')
+  const taps = useRef<number[]>([])
   const [link, setLink] = useState('')
   const [notice, setNotice] = useState('')
   const [unlinking, setUnlinking] = useState(false)
@@ -256,6 +263,7 @@ function Home({ session, role, onLock }: { session: Session; role: Role; onLock:
   const update = (f: (s: State) => State) =>
     setState((prev) => {
       const next = f(prev)
+      next.events = prune(next.events)
       session.state = next
       save(session)
       return next
@@ -363,7 +371,19 @@ function Home({ session, role, onLock }: { session: Session; role: Role; onLock:
   return (
     <div className="home">
       <header className="top">
-        <Logo size={40} />
+        {/* Secret test tool: 7 quick taps on the logo. */}
+        <span
+          onClick={() => {
+            const now = Date.now()
+            taps.current = [...taps.current.filter((t) => now - t < 3000), now]
+            if (taps.current.length >= 7) {
+              taps.current = []
+              setSheet('reset')
+            }
+          }}
+        >
+          <Logo size={40} />
+        </span>
         <div className="who">
           <span className="pill" title="Rôle du jour">{role}</span>
         </div>
@@ -442,6 +462,24 @@ function Home({ session, role, onLock }: { session: Session; role: Role; onLock:
           }}
           onClose={() => setSheet('')}
         />
+      )}
+      {sheet === 'reset' && (
+        <Sheet title="Réinitialiser la journée ?" onClose={() => setSheet('')}>
+          <p className="hint left">
+            Mode test : efface la question, la demande de mood, la tâche et le safeword d'aujourd'hui, ici et chez ton partenaire (avec le prochain
+            message). Le rôle sera redemandé à la prochaine ouverture. L'historique des autres jours, les tokens et l'appairage ne bougent pas.
+          </p>
+          <button
+            className="btn"
+            onClick={() => {
+              update((s) => ({ ...s, myRole: undefined }))
+              if (partner) act({ type: 'reset' })
+              else setSheet('')
+            }}
+          >
+            Réinitialiser
+          </button>
+        </Sheet>
       )}
       {sheet === 'settings' && (
         <Settings

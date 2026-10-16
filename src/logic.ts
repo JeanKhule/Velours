@@ -16,6 +16,7 @@ export type Ev = Base &
     | { type: 'tokenUse' }
     | { type: 'sign'; path: string }
     | { type: 'unlink' }
+    | { type: 'reset' } // secret test tool: wipes the day's game on both phones
   )
 export type EvOf<T extends Ev['type']> = Extract<Ev, { type: T }>
 export type NewEv = Ev extends infer E ? (E extends Ev ? Omit<E, keyof Base> : never) : never
@@ -36,6 +37,13 @@ export function bankIndex(seed: string, day: string, size: number) {
 export function questionOfDay(events: Ev[], seed: string, day: string, bank: string[]) {
   const own = of(events, 'question', day).sort((a, b) => a.at.localeCompare(b.at)).pop()
   return own ? { text: own.text, custom: true } : { text: bank[bankIndex(seed, day, bank.length)], custom: false }
+}
+
+// Drops the day's game events older than a reset of that day, so resent links cannot bring them back.
+const DAILY = new Set<Ev['type']>(['question', 'answer', 'chat', 'moodRequest', 'mood', 'task', 'done', 'safeword'])
+export const prune = (events: Ev[]) => {
+  const resets = events.filter((e) => e.type === 'reset')
+  return events.filter((e) => !DAILY.has(e.type) || !resets.some((r) => r.day === e.day && e.at < r.at))
 }
 
 export const safeworded = (events: Ev[], day: string) => of(events, 'safeword', day).length > 0
