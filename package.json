@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "check": "node scripts/check.ts",
-    "test:e2e": "vite build --logLevel error && node --no-deprecation tests/e2e.mjs"
+    "test:e2e": "vite build --logLevel error && node --no-deprecation tests/e2e.mjs",
+    "deploy": "bash scripts/deploy.sh"
   },
   "dependencies": {
     "@fontsource/bodoni-moda": "^5.3.0",
