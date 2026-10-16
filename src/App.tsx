@@ -1,13 +1,37 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import logoSvg from './logo.svg?raw'
-import { createProfile, hasProfile, unlock, type Session } from './vault'
+import { createProfile, hasProfile, save, unlock, wipe, type Session, type State } from './vault'
+import { extractCode, openEnvelope, safetyCode, sealEnvelope, sharedKey } from './envelope'
+import { dayOf, tokens, type Ev, type NewEv, type Role } from './logic'
+import { Pair } from './Pair'
+import { Contract, History, QuestionTab, TaskTab } from './Tabs'
 
-type Role = 'Dom' | 'Switch' | 'Sub'
 type Stage = 'loading' | 'setup' | 'locked' | 'role' | 'home'
 
-const Logo = ({ size = 72 }: { size?: number }) => (
+// What one phone sends the other: its identity, today's role and its own recent events.
+type Payload = { v: 1; from: string; pseudo: string; role: Role; day: string; events: Ev[] }
+
+export type Ctx = {
+  state: State
+  role: Role
+  today: string
+  partnerRole?: Role
+  act: (e: NewEv) => void
+}
+
+export const Logo = ({ size = 72 }: { size?: number }) => (
   <span className="logo" style={{ width: size }} aria-hidden dangerouslySetInnerHTML={{ __html: logoSvg }} />
 )
+
+// A link opened from the messenger: read once, then removed from the address bar.
+const incoming = { code: '' }
+function grab() {
+  if (!location.hash.startsWith('#m=')) return
+  incoming.code = extractCode(location.hash)
+  history.replaceState(null, '', location.pathname)
+}
+grab()
+addEventListener('hashchange', grab)
 
 export default function App() {
   const [stage, setStage] = useState<Stage>('loading')
@@ -18,7 +42,7 @@ export default function App() {
     hasProfile().then((yes) => setStage(yes ? 'locked' : 'setup'))
   }, [])
 
-  // Lock as soon as the app leaves the screen: the key only lives in memory.
+  // Lock as soon as the app leaves the screen: the keys only live in memory.
   useEffect(() => {
     const lock = () => {
       if (document.visibilityState !== 'hidden') return
@@ -39,8 +63,27 @@ export default function App() {
   if (stage === 'setup') return <Setup onDone={opened} />
   if (stage === 'locked' || !session) return <Unlock onDone={opened} />
   if (stage === 'role' || !role)
-    return <RoleChoice pseudo={session.profile.pseudo} onPick={(r) => { setRole(r); setStage('home') }} />
-  return <Home pseudo={session.profile.pseudo} role={role} onLock={() => { setSession(null); setRole(null); setStage('locked') }} onRole={() => setStage('role')} />
+    return (
+      <RoleChoice
+        pseudo={session.state.profile.pseudo}
+        onPick={(r) => {
+          setRole(r)
+          setStage('home')
+        }}
+      />
+    )
+  return (
+    <Home
+      session={session}
+      role={role}
+      onLock={() => {
+        setSession(null)
+        setRole(null)
+        setStage('locked')
+      }}
+      onRole={() => setStage('role')}
+    />
+  )
 }
 
 function Screen({ children }: { children: ReactNode }) {
@@ -122,11 +165,15 @@ function Unlock({ onDone }: { onDone: (s: Session) => void }) {
     <Screen>
       <Logo size={96} />
       <h1>Entre ton code</h1>
+      {incoming.code && <p className="lead">Un message t'attend.</p>}
       <form className="card stack" onSubmit={submit}>
         <PinInput label="Code PIN" value={pin} onChange={setPin} autoFocus />
         {error && <p className="error" role="alert">{error}</p>}
         <button className="btn" disabled={busy || pin.length < 6}>{busy ? 'Déchiffrement…' : 'Ouvrir'}</button>
       </form>
+      <div className="stack panic-zone">
+        <Panic />
+      </div>
     </Screen>
   )
 }
@@ -158,49 +205,313 @@ function RoleChoice({ pseudo, onPick }: { pseudo: string; onPick: (r: Role) => v
 const TABS = ['Question du jour', 'Tâche du jour', 'Contrat', 'Historique'] as const
 type Tab = (typeof TABS)[number]
 
-function Home(props: { pseudo: string; role: Role; onLock: () => void; onRole: () => void }) {
+function Home({ session, role, onLock, onRole }: { session: Session; role: Role; onLock: () => void; onRole: () => void }) {
+  const [state, setState] = useState(session.state)
+  const [key, setKey] = useState<CryptoKey | null>(null)
   const [tab, setTab] = useState<Tab>('Question du jour')
-  const tokens = 0 // ponytail: placeholder until tasks exist (phase 2)
+  const [sheet, setSheet] = useState<'' | 'send' | 'receive' | 'settings' | 'pair'>('')
+  const [link, setLink] = useState('')
+  const [notice, setNotice] = useState('')
+  const [unlinking, setUnlinking] = useState(false)
+  const today = dayOf()
+  const { me, partner } = state
+  const partnerRole = partner?.roleDay === today ? partner.role : undefined
+
+  // Every change is saved encrypted right away.
+  const update = (f: (s: State) => State) =>
+    setState((prev) => {
+      const next = f(prev)
+      session.state = next
+      save(session)
+      return next
+    })
+
+  useEffect(() => {
+    setKey(null)
+    if (partner) sharedKey(me.priv, partner.pub).then(setKey)
+  }, [partner?.pub])
+
+  // Picking a role today is news for the partner.
+  useEffect(() => {
+    if (partner) update((s) => ({ ...s, unsent: true }))
+  }, [role])
+
+  const receive = async (code: string) => {
+    if (!partner || !key) return setNotice("Liez-vous d'abord pour lire les messages.")
+    let p: Payload
+    try {
+      p = await openEnvelope<Payload>(key, extractCode(code))
+    } catch {
+      return setNotice("Ce message ne vient pas de ton partenaire, ou il est abîmé.")
+    }
+    if (p.from !== partner.id) return setNotice("Ce message ne vient pas de ton partenaire.")
+    // Only the partner's own events are accepted: nobody can write in your name.
+    const known = new Set(state.events.map((e) => e.id))
+    const fresh = p.events.filter((e) => e.by === partner.id && !known.has(e.id))
+    if (fresh.some((e) => e.type === 'unlink')) {
+      update((s) => ({ ...s, partner: undefined }))
+      return setNotice(`${partner.pseudo} a délié le couple.`)
+    }
+    update((s) => ({
+      ...s,
+      events: [...s.events, ...fresh],
+      partner: s.partner && { ...s.partner, pseudo: p.pseudo, role: p.role, roleDay: p.day },
+    }))
+    setNotice(fresh.length ? `Message de ${p.pseudo} reçu.` : `Rien de nouveau de ${p.pseudo}.`)
+  }
+
+  // Links arriving at startup or while the app is open.
+  useEffect(() => {
+    if (!key) return
+    const take = () => {
+      if (!incoming.code) return
+      receiveRef.current(incoming.code)
+      incoming.code = ''
+    }
+    take()
+    addEventListener('hashchange', take)
+    return () => removeEventListener('hashchange', take)
+  }, [key])
+  const receiveRef = useRef(receive)
+  receiveRef.current = receive
+
+  const prepareSend = async () => {
+    if (!partner || !key) return
+    const since = dayOf(new Date(Date.now() - 864e5))
+    const payload: Payload = {
+      v: 1,
+      from: me.id,
+      pseudo: state.profile.pseudo,
+      role,
+      day: today,
+      // ponytail: resends the last two days (plus signatures and struck tokens) so a lost link heals itself.
+      events: state.events.filter((e) => e.by === me.id && (e.day >= since || e.type === 'sign' || e.type === 'tokenUse')),
+    }
+    setLink(`${location.origin}${location.pathname}#m=${await sealEnvelope(key, payload)}`)
+    setSheet('send')
+  }
+
+  const act = (e: NewEv) => {
+    update((s) => ({
+      ...s,
+      unsent: true,
+      events: [...s.events, { ...e, id: crypto.randomUUID(), by: me.id, at: new Date().toISOString(), day: today } as Ev],
+    }))
+    if (e.type !== 'chat' && e.type !== 'answer' && e.type !== 'question') setTimeout(() => prepareSendRef.current(), 0)
+  }
+  const prepareSendRef = useRef(prepareSend)
+  prepareSendRef.current = prepareSend
+
+  const ctx: Ctx = { state, role, today, partnerRole, act }
+  const myTokens = partner ? tokens(state.events, me.id, today) : 0
+
+  if (sheet === 'pair')
+    return (
+      <Pair
+        state={state}
+        onPaired={(p) => {
+          update((s) => ({ ...s, partner: p, events: [], unsent: true }))
+          setSheet('')
+          setTab('Contrat')
+        }}
+        onCancel={() => setSheet('')}
+      />
+    )
 
   return (
     <div className="home">
       <header className="top">
         <Logo size={40} />
         <div className="who">
-          <span className="pseudo">{props.pseudo}</span>
-          <button className="pill" onClick={props.onRole} title="Changer de rôle">{props.role}</button>
+          <button className="pill" onClick={onRole} title="Changer de rôle">{role}</button>
         </div>
-        {props.role !== 'Dom' && <span className="token" title="Tokens punition">{tokens} <small>token{tokens > 1 ? 's' : ''}</small></span>}
-        <button className="ghost" onClick={props.onLock} aria-label="Verrouiller" title="Verrouiller">
+        {partner && (
+          <span className="token" title="Tokens punition">
+            {myTokens} <small>token{myTokens > 1 ? 's' : ''}</small>
+          </span>
+        )}
+        <button className="ghost" onClick={() => setSheet('settings')} aria-label="Réglages" title="Réglages">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="1.6" /><path fill="none" stroke="currentColor" strokeWidth="1.6" d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" /></svg>
+        </button>
+        <button className="ghost" onClick={onLock} aria-label="Verrouiller" title="Verrouiller">
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden><path fill="none" stroke="currentColor" strokeWidth="1.6" d="M7 11V8a5 5 0 0 1 10 0v3M6 11h12v9H6z" /></svg>
         </button>
       </header>
 
+      {partner && (
+        <div className="sync">
+          <span>
+            {partner.pseudo} · {partnerRole ?? 'rôle du jour inconnu'}
+          </span>
+          <button className="ghost small" onClick={() => setSheet('receive')}>Recevoir</button>
+          <button className={`ghost small ${state.unsent ? 'hot' : ''}`} onClick={prepareSend}>
+            Envoyer{state.unsent ? ' •' : ''}
+          </button>
+        </div>
+      )}
+
+      {notice && (
+        <button className="notice" onClick={() => setNotice('')}>
+          {notice}
+        </button>
+      )}
+
       <section className="panel" key={tab}>
         <h1>{tab}</h1>
-        {tab === 'Question du jour' && <Locked text="Liez vos deux téléphones pour recevoir votre première question." />}
-        {tab === 'Tâche du jour' && <Locked text="La demande de mood et la tâche s'ouvriront une fois le couple lié." />}
-        {tab === 'Contrat' && <Empty text="Votre contrat sera scellé le jour du jumelage." />}
-        {tab === 'Historique' && <Empty text="Aucune tâche pour l'instant." />}
+        {!partner ? (
+          <Locked onPair={() => setSheet('pair')} />
+        ) : tab === 'Question du jour' ? (
+          <QuestionTab ctx={ctx} />
+        ) : tab === 'Tâche du jour' ? (
+          <TaskTab ctx={ctx} />
+        ) : tab === 'Contrat' ? (
+          <Contract ctx={ctx} />
+        ) : (
+          <History ctx={ctx} />
+        )}
       </section>
 
       <nav className="tabs">
         {TABS.map((t) => (
-          <button key={t} className={t === tab ? 'on' : ''} aria-current={t === tab} onClick={() => setTab(t)}>{t}</button>
+          <button key={t} className={t === tab ? 'on' : ''} aria-current={t === tab} onClick={() => setTab(t)}>
+            {t}
+          </button>
         ))}
       </nav>
+
+      {sheet === 'send' && (
+        <SendSheet
+          link={link}
+          to={partner?.pseudo ?? ''}
+          onSent={() => update((s) => ({ ...s, unsent: false }))}
+          onClose={() => {
+            // The unlink notice has been offered to the partner: now forget them.
+            if (unlinking) update((s) => ({ ...s, partner: undefined }))
+            setUnlinking(false)
+            setSheet('')
+          }}
+        />
+      )}
+      {sheet === 'receive' && (
+        <ReceiveSheet
+          onCode={(c) => {
+            receive(c)
+            setSheet('')
+          }}
+          onClose={() => setSheet('')}
+        />
+      )}
+      {sheet === 'settings' && (
+        <Settings
+          state={state}
+          onPair={() => setSheet('pair')}
+          onUnlink={() => {
+            setUnlinking(true)
+            act({ type: 'unlink' })
+          }}
+          onClose={() => setSheet('')}
+        />
+      )}
     </div>
   )
 }
 
-const Locked = ({ text }: { text: string }) => (
+const Locked = ({ onPair }: { onPair: () => void }) => (
   <div className="card arch">
     <svg viewBox="0 0 24 24" width="36" height="36" aria-hidden><path fill="none" stroke="currentColor" strokeWidth="1.5" d="M7 11V8a5 5 0 0 1 10 0v3M6 11h12v9H6z" /></svg>
-    <p>{text}</p>
-    <button className="btn" disabled>Appairer (bientôt)</button>
+    <p>Liez vos deux téléphones, face à face, pour ouvrir le jeu.</p>
+    <button className="btn" onClick={onPair}>Appairer</button>
   </div>
 )
 
-const Empty = ({ text }: { text: string }) => (
-  <div className="card arch"><p>{text}</p></div>
-)
+export function Sheet({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
+  return (
+    <div className="sheet-bg" onClick={onClose}>
+      <div className="sheet" role="dialog" aria-label={title} onClick={(e) => e.stopPropagation()}>
+        <h2>{title}</h2>
+        {children}
+        <button className="ghost wide" onClick={onClose}>Fermer</button>
+      </div>
+    </div>
+  )
+}
+
+function SendSheet({ link, to, onSent, onClose }: { link: string; to: string; onSent: () => void; onClose: () => void }) {
+  const [copied, setCopied] = useState(false)
+  const share = async () => {
+    onSent()
+    try {
+      await navigator.share({ url: link })
+    } catch {
+      /* cancelled: the link stays available below */
+    }
+  }
+  const copy = async () => {
+    await navigator.clipboard.writeText(link)
+    onSent()
+    setCopied(true)
+  }
+  return (
+    <Sheet title={`Envoyer à ${to}`} onClose={onClose}>
+      <p className="hint left">
+        Le message est scellé : seul le téléphone de {to} peut l'ouvrir. Envoie‑le par la messagerie de ton choix.
+      </p>
+      {'share' in navigator && <button className="btn" onClick={share}>Partager</button>}
+      <button className="ghost wide" onClick={copy}>{copied ? 'Copié ✓' : 'Copier le lien'}</button>
+    </Sheet>
+  )
+}
+
+function ReceiveSheet({ onCode, onClose }: { onCode: (c: string) => void; onClose: () => void }) {
+  const [text, setText] = useState('')
+  return (
+    <Sheet title="Recevoir un message" onClose={onClose}>
+      <p className="hint left">Colle ici le lien reçu. Il ne s'ouvre qu'avec la clé de votre couple.</p>
+      <textarea className="input" rows={4} value={text} onChange={(e) => setText(e.target.value)} placeholder="https://…#m=…" />
+      <button className="btn" disabled={!extractCode(text)} onClick={() => onCode(text)}>Ouvrir</button>
+    </Sheet>
+  )
+}
+
+function Settings(props: { state: State; onPair: () => void; onUnlink: () => void; onClose: () => void }) {
+  const [code, setCode] = useState('')
+  const [confirm, setConfirm] = useState(false)
+  const { partner, me } = props.state
+  useEffect(() => {
+    if (partner) safetyCode(me.pub, partner.pub).then(setCode)
+  }, [])
+  return (
+    <Sheet title="Réglages" onClose={props.onClose}>
+      {partner ? (
+        <>
+          <p className="hint left">
+            Lié·e à <strong>{partner.pseudo}</strong> depuis le {new Date(partner.pairedAt).toLocaleDateString('fr-FR')}. Code de sécurité :{' '}
+            <strong>{code}</strong>
+          </p>
+          {confirm ? (
+            <button className="btn" onClick={props.onUnlink}>Oui, délier (votre jeu sera effacé)</button>
+          ) : (
+            <button className="ghost wide" onClick={() => setConfirm(true)}>Délier le couple</button>
+          )}
+        </>
+      ) : (
+        <button className="btn" onClick={props.onPair}>Appairer</button>
+      )}
+      <Panic />
+    </Sheet>
+  )
+}
+
+// Wipes this phone instantly. Also reachable from the lock screen, without the PIN.
+export function Panic() {
+  const [armed, setArmed] = useState(false)
+  const panic = async () => {
+    await wipe()
+    location.replace(location.pathname)
+  }
+  return armed ? (
+    <button className="btn panic" onClick={panic}>Tout effacer maintenant</button>
+  ) : (
+    <button className="ghost wide danger" onClick={() => setArmed(true)}>Bouton panique</button>
+  )
+}

@@ -1,8 +1,17 @@
 import { deriveKey, seal, unseal, type Sealed } from './crypto'
+import { newKeyPair } from './envelope'
+import type { Ev, Role } from './logic'
 
 // One IndexedDB store, one encrypted record. Nothing readable without the PIN.
-export type Profile = { pseudo: string; createdAt: string }
-export type Session = { key: CryptoKey; salt: Uint8Array<ArrayBuffer>; profile: Profile }
+export type Partner = { id: string; pseudo: string; pub: string; pairedAt: string; role?: Role; roleDay?: string }
+export type State = {
+  profile: { pseudo: string; createdAt: string }
+  me: { id: string; priv: JsonWebKey; pub: string }
+  partner?: Partner
+  events: Ev[]
+  unsent: boolean
+}
+export type Session = { key: CryptoKey; salt: Uint8Array<ArrayBuffer>; state: State }
 
 const DB = 'bm'
 const STORE = 'kv'
@@ -29,13 +38,24 @@ const load = () => tx<Sealed | undefined>('readonly', (s) => s.get('vault'))
 
 export const hasProfile = async () => !!(await load())
 
+// ponytail: re-encrypts the whole state on every change; split per day if it ever gets slow.
+export async function save(s: Session) {
+  const sealed = await seal(s.key, s.salt, s.state)
+  await tx('readwrite', (st) => st.put(sealed, 'vault'))
+}
+
 export async function createProfile(pseudo: string, pin: string): Promise<Session> {
   const salt = crypto.getRandomValues(new Uint8Array(16))
   const key = await deriveKey(pin, salt)
-  const profile = { pseudo, createdAt: new Date().toISOString() }
-  const sealed = await seal(key, salt, profile)
-  await tx('readwrite', (s) => s.put(sealed, 'vault'))
-  return { key, salt, profile }
+  const state: State = {
+    profile: { pseudo, createdAt: new Date().toISOString() },
+    me: { id: crypto.randomUUID(), ...(await newKeyPair()) },
+    events: [],
+    unsent: false,
+  }
+  const s = { key, salt, state }
+  await save(s)
+  return s
 }
 
 export async function unlock(pin: string): Promise<Session | null> {
@@ -43,7 +63,7 @@ export async function unlock(pin: string): Promise<Session | null> {
   if (!sealed) return null
   const key = await deriveKey(pin, sealed.salt)
   try {
-    return { key, salt: sealed.salt, profile: await unseal<Profile>(key, sealed) }
+    return { key, salt: sealed.salt, state: await unseal<State>(key, sealed) }
   } catch {
     return null
   }
