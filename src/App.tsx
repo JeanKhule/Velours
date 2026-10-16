@@ -34,11 +34,14 @@ function grab() {
 grab()
 addEventListener('hashchange', grab)
 
+// A link opened in the browser (on iPhone: always Safari, never the home-screen app) only offers the transfer.
+const installed = matchMedia('(display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone === true
+const bridgeOnly = !!incoming.code && !installed
+
 export default function App() {
   const [stage, setStage] = useState<Stage>('loading')
   const [session, setSession] = useState<Session | null>(null)
   const [role, setRole] = useState<Role | null>(null)
-  const [bridge, setBridge] = useState(!!incoming.code)
 
   useEffect(() => {
     hasProfile().then((yes) => setStage(yes ? 'locked' : 'setup'))
@@ -66,8 +69,8 @@ export default function App() {
     } else setStage('role')
   }
 
+  if (bridgeOnly) return <Bridge />
   if (stage === 'loading') return <Screen><Logo /></Screen>
-  if (stage === 'setup' && bridge) return <Bridge onSetup={() => setBridge(false)} />
   if (stage === 'setup') return <Setup onDone={opened} />
   if (stage === 'locked' || !session) return <Unlock onDone={opened} />
   if (stage === 'role' || !role)
@@ -119,16 +122,15 @@ function PinInput(props: { label: string; value: string; onChange: (v: string) =
   )
 }
 
-// A sealed link opened where no profile lives (on iPhone: Safari, not the home-screen app).
-// Nothing is stored here: the message is only copied, to be pasted in the app.
-function Bridge({ onSetup }: { onSetup: () => void }) {
+// Nothing is read or stored here: the message is only copied, to be received in the app.
+function Bridge() {
   const [copied, setCopied] = useState(false)
   return (
     <Screen>
       <Logo size={72} />
       <h1>Message reçu</h1>
       <p className="lead">
-        Ce lien s'est ouvert dans le navigateur, pas dans l'app. Copie le message, puis ouvre l'app depuis ton écran d'accueil et touche « Recevoir ».
+        Ce lien s'est ouvert dans le navigateur, pas dans l'app. Transfère‑le, puis ouvre l'app depuis ton écran d'accueil et touche « Recevoir ».
       </p>
       <div className="stack">
         <button
@@ -138,9 +140,8 @@ function Bridge({ onSetup }: { onSetup: () => void }) {
             setCopied(true)
           }}
         >
-          {copied ? 'Copié ✓' : "Copier pour l'app"}
+          {copied ? "Prêt : ouvre l'app ✓" : "Transférer à l'app"}
         </button>
-        <button className="ghost wide" onClick={onSetup}>Je n'ai pas encore de profil : en créer un ici</button>
       </div>
     </Screen>
   )

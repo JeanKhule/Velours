@@ -34,6 +34,9 @@ async function phone(browser) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, permissions: ['camera'] })
   await ctx.clock.setFixedTime(DAY(16))
   await ctx.addInitScript(() => {
+    // Behave like the app installed on the home screen.
+    const mm = window.matchMedia.bind(window)
+    window.matchMedia = (q) => (q.includes('display-mode: standalone') ? { matches: true, media: q, addEventListener() {}, removeEventListener() {} } : mm(q))
     if (navigator.clipboard) {
       navigator.clipboard.writeText = async (t) => void (window.__l = t)
       navigator.clipboard.readText = async () => window.__clip ?? ''
@@ -507,18 +510,23 @@ try {
     await n.click()
   })
 
-  await check('Lien ouvert hors de l’app (Safari) : « Copier pour l’app », rien n’est stocké', async () => {
+  await check('Lien ouvert hors de l’app (Safari) : seul « Transférer à l’app » est proposé, même avec un profil', async () => {
     const link = await send(A)
     const C = await browserB.newContext()
     await C.addInitScript(() => {
       if (navigator.clipboard) navigator.clipboard.writeText = async (t) => void (window.__l = t)
     })
     const c = await C.newPage()
+    await c.goto(BASE)
+    await create(c, 'Safari', '111111')
+    await c.locator('.roles').waitFor()
+    await c.goto('about:blank')
     await c.goto(link)
     await c.getByText('Message reçu').waitFor()
-    await btn(c, "Copier pour l'app").click()
+    assert.deepStrictEqual(await c.getByRole('button').allInnerTexts(), ["Transférer à l'app"])
+    assert.strictEqual(await c.getByLabel('Code PIN').count(), 0)
+    await btn(c, "Transférer à l'app").click()
     assert.strictEqual(await c.evaluate(() => window.__l), link)
-    assert.ok(!(await c.evaluate(() => indexedDB.databases())).some((d) => d.name === 'bm'), 'nothing stored in the browser')
     await C.close()
   })
 
