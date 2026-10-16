@@ -1,4 +1,4 @@
-import { useRef, useState, type PointerEvent } from 'react'
+import { useRef, useState, type CSSProperties, type PointerEvent } from 'react'
 import type { Ctx } from './App'
 import { Logo } from './App'
 import { QUESTIONS } from './questions'
@@ -20,12 +20,19 @@ const seedOf = (ctx: Ctx) => [ctx.state.me.id, ctx.state.partner!.id].sort().joi
 const fmtDay = (day: string) => new Date(day + 'T12:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
 const byAt = (a: Ev, b: Ev) => a.at.localeCompare(b.at)
 
+// Leather strap with 4 eyelets, filled in red latex up to a heart-padlock cursor.
 function Slider(props: { label: string; value: number; onChange: (n: number) => void; levels?: string[] }) {
   return (
     <label className="slider">
       <span>{props.label}</span>
-      <input type="range" min={1} max={4} step={1} value={props.value} onChange={(e) => props.onChange(+e.target.value)} />
-      <em>{props.levels ? props.levels[props.value - 1] : `${props.value} / 4`}</em>
+      <div className="track" style={{ '--p': (props.value - 1) / 3 } as CSSProperties}>
+        <i className="fill" />
+        {[0, 1, 2, 3].map((k) => (
+          <b key={k} className={k < props.value ? 'eyelet on' : 'eyelet'} style={{ '--k': k / 3 } as CSSProperties} />
+        ))}
+        <input type="range" min={1} max={4} step={1} value={props.value} onChange={(e) => props.onChange(+e.target.value)} />
+      </div>
+      <em key={props.value}>{props.levels ? props.levels[props.value - 1] : `${props.value} / 4`}</em>
     </label>
   )
 }
