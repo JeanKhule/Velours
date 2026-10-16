@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 npx vite build --logLevel error
-export GIT_INDEX_FILE=.git/deploy-index
+export GIT_INDEX_FILE="$PWD/.git/deploy-index"
 rm -f "$GIT_INDEX_FILE"
 git --work-tree=dist add -A
 tree=$(git write-tree)
