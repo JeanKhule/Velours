@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check": "node scripts/check.ts",
+    "test:e2e": "vite build --logLevel error && node --no-deprecation tests/e2e.mjs"
   },
   "dependencies": {
     "@fontsource/bodoni-moda": "^5.3.0",
@@ -21,6 +23,7 @@
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.7.0",
+    "playwright-core": "^1.64.1",
     "typescript": "^5.9.3",
     "vite": "^5.4.21"
   }

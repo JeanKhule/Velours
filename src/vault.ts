@@ -36,7 +36,8 @@ async function tx<T>(mode: IDBTransactionMode, run: (s: IDBObjectStore) => IDBRe
 
 const load = () => tx<Sealed | undefined>('readonly', (s) => s.get('vault'))
 
-export const hasProfile = async () => !!(await load())
+// Checked without opening (which would recreate an empty database after a panic wipe).
+export const hasProfile = async () => (await indexedDB.databases()).some((d) => d.name === DB) && !!(await load())
 
 // ponytail: re-encrypts the whole state on every change; split per day if it ever gets slow.
 export async function save(s: Session) {
