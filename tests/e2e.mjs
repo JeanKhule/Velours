@@ -34,7 +34,10 @@ async function phone(browser) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, permissions: ['camera'] })
   await ctx.clock.setFixedTime(DAY(16))
   await ctx.addInitScript(() => {
-    if (navigator.clipboard) navigator.clipboard.writeText = async (t) => void (window.__l = t)
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText = async (t) => void (window.__l = t)
+      navigator.clipboard.readText = async () => window.__clip ?? ''
+    }
   })
   ctx.on('request', (r) => !r.url().startsWith(BASE) && !r.url().startsWith('data:') && foreign.push(r.url()))
   const p = await ctx.newPage()
@@ -64,7 +67,10 @@ async function open(p, pin, role) {
   await p.goto(BASE)
   await p.getByLabel('Code PIN').fill(pin)
   await btn(p, 'Ouvrir').click()
-  await btn(p, new RegExp(`^${role}`)).click()
+  // The role screen only shows up once per day.
+  await p.locator('.roles, .home').first().waitFor()
+  if (await p.locator('.roles').count()) await btn(p, new RegExp(`^${role}`)).click()
+  await p.locator('.home').waitFor()
 }
 
 // The sealed-link sheet: copy the link and close it.
@@ -162,13 +168,22 @@ try {
     assert.deepStrictEqual(r, { keys: ['salt', 'iv', 'data'], clear: false })
   })
 
-  await check('Déverrouillage : mauvais PIN refusé, bon PIN accepté, rôle demandé à chaque ouverture', async () => {
+  await check('Déverrouillage : mauvais PIN refusé, bon PIN accepté', async () => {
     await B.goto(BASE)
     await B.getByLabel('Code PIN').fill('999999')
     await btn(B, 'Ouvrir').click()
     assert.match(await B.getByRole('alert').innerText(), /incorrect/)
     await open(B, PIN_B, 'Sub')
     await B.locator('.panel').waitFor()
+  })
+
+  await check('Rôle choisi une seule fois par jour (pas redemandé à la réouverture)', async () => {
+    await B.goto(BASE)
+    await B.getByLabel('Code PIN').fill(PIN_B)
+    await btn(B, 'Ouvrir').click()
+    await B.locator('.home').waitFor()
+    assert.strictEqual(await B.locator('.roles').count(), 0)
+    assert.strictEqual(await B.locator('.top .pill').innerText(), 'Sub')
   })
 
   await check('Verrouillage automatique dès que l’app passe en arrière-plan', async () => {
@@ -213,6 +228,7 @@ try {
     await btn(A, 'Scanner son QR').click()
     await A.locator('.safety').waitFor({ timeout: 15000 })
     safety = await A.locator('.safety').innerText()
+    await A.locator('.qr svg').waitFor() // A's own QR stays visible so B can still scan it
   })
 
   await check('Appairage : code recopié (sans caméra) et même code de sécurité des deux côtés', async () => {
@@ -477,13 +493,39 @@ try {
     assert.strictEqual(new URL(B.url()).hash, '', 'code removed from the address bar')
     await B.getByLabel('Code PIN').fill(PIN_B)
     await btn(B, 'Ouvrir').click()
-    await btn(B, /^Dom/).click()
     await B.locator('.notice').waitFor()
     await B.locator('.notice').click()
   })
 
+  await check('Recevoir en un geste : le message copié est lu depuis le presse-papiers', async () => {
+    const link = await send(A)
+    await B.evaluate((l) => (window.__clip = l), link)
+    await B.locator('.sync button', { hasText: 'Recevoir' }).click()
+    const n = B.locator('.notice')
+    await n.waitFor()
+    assert.match(await n.innerText(), /Maitre/)
+    await n.click()
+  })
+
+  await check('Lien ouvert hors de l’app (Safari) : « Copier pour l’app », rien n’est stocké', async () => {
+    const link = await send(A)
+    const C = await browserB.newContext()
+    await C.addInitScript(() => {
+      if (navigator.clipboard) navigator.clipboard.writeText = async (t) => void (window.__l = t)
+    })
+    const c = await C.newPage()
+    await c.goto(link)
+    await c.getByText('Message reçu').waitFor()
+    await btn(c, "Copier pour l'app").click()
+    assert.strictEqual(await c.evaluate(() => window.__l), link)
+    assert.ok(!(await c.evaluate(() => indexedDB.databases())).some((d) => d.name === 'bm'), 'nothing stored in the browser')
+    await C.close()
+  })
+
   await check('Réglages : délier le couple (prévient l’autre)', async () => {
     await A.getByRole('button', { name: 'Réglages' }).click()
+    await A.getByText("Mon QR d'appairage").click()
+    await A.locator('.sheet .qr svg').waitFor()
     await btn(A, 'Délier le couple').click()
     await btn(A, /^Oui, délier/).click()
     const link = await grab(A)

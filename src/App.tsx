@@ -3,7 +3,7 @@ import logoSvg from './logo.svg?raw'
 import { createProfile, hasProfile, save, unlock, wipe, type Session, type State } from './vault'
 import { extractCode, openEnvelope, safetyCode, sealEnvelope, sharedKey } from './envelope'
 import { dayOf, tokens, type Ev, type NewEv, type Role } from './logic'
-import { Pair } from './Pair'
+import { MyQr, Pair } from './Pair'
 import { Contract, History, QuestionTab, TaskTab } from './Tabs'
 
 type Stage = 'loading' | 'setup' | 'locked' | 'role' | 'home'
@@ -24,10 +24,11 @@ export const Logo = ({ size = 72 }: { size?: number }) => (
 )
 
 // A link opened from the messenger: read once, then removed from the address bar.
-const incoming = { code: '' }
+const incoming = { code: '', link: '' }
 function grab() {
   if (!location.hash.startsWith('#m=')) return
   incoming.code = extractCode(location.hash)
+  incoming.link = location.href
   history.replaceState(null, '', location.pathname)
 }
 grab()
@@ -37,6 +38,7 @@ export default function App() {
   const [stage, setStage] = useState<Stage>('loading')
   const [session, setSession] = useState<Session | null>(null)
   const [role, setRole] = useState<Role | null>(null)
+  const [bridge, setBridge] = useState(!!incoming.code)
 
   useEffect(() => {
     hasProfile().then((yes) => setStage(yes ? 'locked' : 'setup'))
@@ -54,12 +56,18 @@ export default function App() {
     return () => document.removeEventListener('visibilitychange', lock)
   }, [])
 
+  // The role is chosen once per day: reopening the same day goes straight home.
   const opened = (s: Session) => {
     setSession(s)
-    setStage('role')
+    const mine = s.state.myRole
+    if (mine?.day === dayOf()) {
+      setRole(mine.role)
+      setStage('home')
+    } else setStage('role')
   }
 
   if (stage === 'loading') return <Screen><Logo /></Screen>
+  if (stage === 'setup' && bridge) return <Bridge onSetup={() => setBridge(false)} />
   if (stage === 'setup') return <Setup onDone={opened} />
   if (stage === 'locked' || !session) return <Unlock onDone={opened} />
   if (stage === 'role' || !role)
@@ -67,6 +75,9 @@ export default function App() {
       <RoleChoice
         pseudo={session.state.profile.pseudo}
         onPick={(r) => {
+          // Saved (encrypted) so the choice holds for the day; the partner learns it with the next link.
+          session.state = { ...session.state, myRole: { role: r, day: dayOf() }, unsent: session.state.partner ? true : session.state.unsent }
+          save(session)
           setRole(r)
           setStage('home')
         }}
@@ -81,7 +92,6 @@ export default function App() {
         setRole(null)
         setStage('locked')
       }}
-      onRole={() => setStage('role')}
     />
   )
 }
@@ -106,6 +116,33 @@ function PinInput(props: { label: string; value: string; onChange: (v: string) =
         onChange={(e) => props.onChange(e.target.value.replace(/\D/g, ''))}
       />
     </label>
+  )
+}
+
+// A sealed link opened where no profile lives (on iPhone: Safari, not the home-screen app).
+// Nothing is stored here: the message is only copied, to be pasted in the app.
+function Bridge({ onSetup }: { onSetup: () => void }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <Screen>
+      <Logo size={72} />
+      <h1>Message reçu</h1>
+      <p className="lead">
+        Ce lien s'est ouvert dans le navigateur, pas dans l'app. Copie le message, puis ouvre l'app depuis ton écran d'accueil et touche « Recevoir ».
+      </p>
+      <div className="stack">
+        <button
+          className="btn"
+          onClick={async () => {
+            await navigator.clipboard.writeText(incoming.link)
+            setCopied(true)
+          }}
+        >
+          {copied ? 'Copié ✓' : "Copier pour l'app"}
+        </button>
+        <button className="ghost wide" onClick={onSetup}>Je n'ai pas encore de profil : en créer un ici</button>
+      </div>
+    </Screen>
   )
 }
 
@@ -202,7 +239,7 @@ function RoleChoice({ pseudo, onPick }: { pseudo: string; onPick: (r: Role) => v
 const TABS = ['Question du jour', 'Tâche du jour', 'Contrat', 'Historique'] as const
 type Tab = (typeof TABS)[number]
 
-function Home({ session, role, onLock, onRole }: { session: Session; role: Role; onLock: () => void; onRole: () => void }) {
+function Home({ session, role, onLock }: { session: Session; role: Role; onLock: () => void }) {
   const [state, setState] = useState(session.state)
   const [key, setKey] = useState<CryptoKey | null>(null)
   const [tab, setTab] = useState<Tab>('Question du jour')
@@ -228,10 +265,6 @@ function Home({ session, role, onLock, onRole }: { session: Session; role: Role;
     if (partner) sharedKey(me.priv, partner.pub).then(setKey)
   }, [partner?.pub])
 
-  // Picking a role today is news for the partner.
-  useEffect(() => {
-    if (partner) update((s) => ({ ...s, unsent: true }))
-  }, [role])
 
   const receive = async (code: string) => {
     if (!partner || !key) return setNotice("Liez-vous d'abord pour lire les messages.")
@@ -271,6 +304,17 @@ function Home({ session, role, onLock, onRole }: { session: Session; role: Role;
   }, [key])
   const receiveRef = useRef(receive)
   receiveRef.current = receive
+
+  // One tap: take the message from the clipboard (iOS opens links in Safari, not in the app); else show the paste field.
+  const pasteOrAsk = async () => {
+    try {
+      const text = (await navigator.clipboard.readText()).trim()
+      if (/#m=|^[A-Za-z0-9_-]{40,}$/.test(text)) return receive(text)
+    } catch {
+      /* clipboard refused: fall back to the paste field */
+    }
+    setSheet('receive')
+  }
 
   const prepareSend = async () => {
     if (!partner || !key) return
@@ -320,7 +364,7 @@ function Home({ session, role, onLock, onRole }: { session: Session; role: Role;
       <header className="top">
         <Logo size={40} />
         <div className="who">
-          <button className="pill" onClick={onRole} title="Changer de rôle">{role}</button>
+          <span className="pill" title="Rôle du jour">{role}</span>
         </div>
         {partner && (
           <span className="token" title="Tokens punition">
@@ -340,7 +384,7 @@ function Home({ session, role, onLock, onRole }: { session: Session; role: Role;
           <span>
             {partner.pseudo} · {partnerRole ?? 'rôle du jour inconnu'}
           </span>
-          <button className="ghost small" onClick={() => setSheet('receive')}>Recevoir</button>
+          <button className="ghost small" onClick={pasteOrAsk}>Recevoir</button>
           <button className={`ghost small ${state.unsent ? 'hot' : ''}`} onClick={prepareSend}>
             Envoyer{state.unsent ? ' •' : ''}
           </button>
@@ -485,6 +529,10 @@ function Settings(props: { state: State; onPair: () => void; onUnlink: () => voi
             Lié·e à <strong>{partner.pseudo}</strong> depuis le {new Date(partner.pairedAt).toLocaleDateString('fr-FR')}. Code de sécurité :{' '}
             <strong>{code}</strong>
           </p>
+          <details className="manual">
+            <summary>Mon QR d'appairage</summary>
+            <MyQr state={props.state} />
+          </details>
           {confirm ? (
             <button className="btn" onClick={props.onUnlink}>Oui, délier (votre jeu sera effacé)</button>
           ) : (

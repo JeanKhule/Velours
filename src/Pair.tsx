@@ -27,9 +27,6 @@ export function Pair({ state, onPaired, onCancel }: { state: State; onPaired: (p
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
 
-  const qr = qrcode(0, 'M')
-  qr.addData(mine)
-  qr.make()
 
   const take = async (text: string) => {
     const c = decode(text)
@@ -47,8 +44,9 @@ export function Pair({ state, onPaired, onCancel }: { state: State; onPaired: (p
         <p className="lead">Le même code doit s'afficher sur les deux téléphones.</p>
         <p className="safety">{code}</p>
         <p className="lead">
-          Pense aussi à faire scanner ton QR par <strong>{found.pseudo}</strong>.
+          Si ce n'est pas déjà fait, <strong>{found.pseudo}</strong> scanne maintenant ton QR :
         </p>
+        <MyQr state={state} />
         <div className="stack">
           <button className="btn" onClick={() => onPaired({ ...found, pairedAt: new Date().toISOString() })}>
             C'est le même : lier avec {found.pseudo}
@@ -65,7 +63,7 @@ export function Pair({ state, onPaired, onCancel }: { state: State; onPaired: (p
       {scanning ? (
         <Scanner onText={take} onError={setError} />
       ) : (
-        <div className="qr" aria-label="Ton QR d'appairage" dangerouslySetInnerHTML={{ __html: qr.createSvgTag({ scalable: true, margin: 2 }) }} />
+        <MyQr state={state} />
       )}
       <div className="stack">
         <button className="btn" onClick={() => setScanning(!scanning)}>{scanning ? 'Afficher mon QR' : 'Scanner son QR'}</button>
@@ -81,6 +79,14 @@ export function Pair({ state, onPaired, onCancel }: { state: State; onPaired: (p
       </div>
     </main>
   )
+}
+
+// This phone's pairing QR; also reachable from settings once linked, so the other phone can still scan it.
+export function MyQr({ state }: { state: State }) {
+  const qr = qrcode(0, 'M')
+  qr.addData(encode({ id: state.me.id, pseudo: state.profile.pseudo, pub: state.me.pub }))
+  qr.make()
+  return <div className="qr" aria-label="Ton QR d'appairage" dangerouslySetInnerHTML={{ __html: qr.createSvgTag({ scalable: true, margin: 2 }) }} />
 }
 
 function Scanner({ onText, onError }: { onText: (t: string) => void; onError: (e: string) => void }) {

@@ -8,6 +8,7 @@ export type State = {
   profile: { pseudo: string; createdAt: string }
   me: { id: string; priv: JsonWebKey; pub: string }
   partner?: Partner
+  myRole?: { role: Role; day: string } // chosen once per day
   events: Ev[]
   unsent: boolean
 }
