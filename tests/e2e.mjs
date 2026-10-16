@@ -205,6 +205,8 @@ try {
 
   await check('Appairage : scan du QR de l’autre à la caméra', async () => {
     await create(A, 'Maitre', PIN_A)
+    await A.locator('.roles').waitFor()
+    assert.match(await A.locator('.roles').textContent(), /tiens la laisse[\s\S]*je veux les deux[\s\S]*j'obéis sans discuter/)
     await btn(A, /^Dom/).click()
     await btn(A, 'Appairer').click()
     codeA = await A.locator('textarea[readonly]').inputValue()
@@ -491,21 +493,24 @@ try {
     assert.match(await panel(B), /Liez vos deux téléphones/)
   })
 
-  await check('Bouton panique depuis l’écran du PIN : tout est effacé', async () => {
+  await check('Effacement : absent de l’écran du PIN, caché dans les réglages, confirmation « EFFACER » exigée', async () => {
     await B.getByRole('button', { name: 'Verrouiller' }).click()
-    await btn(B, 'Bouton panique').click()
-    await btn(B, 'Tout effacer maintenant').click()
+    await B.getByText('Entre ton code').waitFor()
+    assert.strictEqual(await B.getByText(/panique|effacer/i).count(), 0)
+    await open(B, PIN_B, 'Sub')
+    await B.getByRole('button', { name: 'Réglages' }).click()
+    assert.ok(!(await btn(B, 'Tout effacer').isVisible()), 'hidden until « Zone sensible » is opened')
+    await B.getByText('Zone sensible').click()
+    assert.ok(await btn(B, 'Tout effacer').isDisabled())
+    await B.getByPlaceholder('EFFACER').fill('effac')
+    assert.ok(await btn(B, 'Tout effacer').isDisabled())
+    await B.getByPlaceholder('EFFACER').fill('effacer')
+    await btn(B, 'Tout effacer').click()
     await B.getByText('Bienvenue').waitFor()
     const dbs = await B.evaluate(() => indexedDB.databases())
     assert.ok(!dbs.some((d) => d.name === 'bm'), 'database deleted')
   })
 
-  await check('Bouton panique depuis les réglages', async () => {
-    await A.getByRole('button', { name: 'Réglages' }).click()
-    await btn(A, 'Bouton panique').click()
-    await btn(A, 'Tout effacer maintenant').click()
-    await A.getByText('Bienvenue').waitFor()
-  })
 
   await check('Confidentialité : aucune requête vers un autre domaine', async () => {
     assert.deepStrictEqual(foreign, [])

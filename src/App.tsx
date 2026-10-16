@@ -171,17 +171,14 @@ function Unlock({ onDone }: { onDone: (s: Session) => void }) {
         {error && <p className="error" role="alert">{error}</p>}
         <button className="btn" disabled={busy || pin.length < 6}>{busy ? 'Déchiffrement…' : 'Ouvrir'}</button>
       </form>
-      <div className="stack panic-zone">
-        <Panic />
-      </div>
     </Screen>
   )
 }
 
 const ROLES: { role: Role; line: string }[] = [
-  { role: 'Dom', line: 'Je demande le mood et je donne la tâche.' },
-  { role: 'Switch', line: 'Je donne ou je reçois, selon le jeu.' },
-  { role: 'Sub', line: 'Je donne mon mood et je reçois la tâche.' },
+  { role: 'Dom', line: "Ce soir, c'est moi qui tiens la laisse. J'exige ton mood, tu exécutes mes ordres." },
+  { role: 'Switch', line: 'Dominer ou plier ? Je ne choisis pas : je veux les deux.' },
+  { role: 'Sub', line: "Je suis à toi. Je t'avoue mon envie et j'obéis sans discuter." },
 ]
 
 function RoleChoice({ pseudo, onPick }: { pseudo: string; onPick: (r: Role) => void }) {
@@ -497,21 +494,26 @@ function Settings(props: { state: State; onPair: () => void; onUnlink: () => voi
       ) : (
         <button className="btn" onClick={props.onPair}>Appairer</button>
       )}
-      <Panic />
+      <details className="manual">
+        <summary>Zone sensible</summary>
+        <Panic />
+      </details>
     </Sheet>
   )
 }
 
-// Wipes this phone instantly. Also reachable from the lock screen, without the PIN.
-export function Panic() {
-  const [armed, setArmed] = useState(false)
+// Wipes this phone. Tucked away in settings, behind a typed confirmation so it never fires by accident.
+function Panic() {
+  const [word, setWord] = useState('')
   const panic = async () => {
     await wipe()
     location.replace(location.pathname)
   }
-  return armed ? (
-    <button className="btn panic" onClick={panic}>Tout effacer maintenant</button>
-  ) : (
-    <button className="ghost wide danger" onClick={() => setArmed(true)}>Bouton panique</button>
+  return (
+    <>
+      <p className="hint left">Efface tout de ce téléphone, sans retour possible. Écris EFFACER pour confirmer.</p>
+      <input className="input" value={word} autoComplete="off" placeholder="EFFACER" onChange={(e) => setWord(e.target.value.toUpperCase())} />
+      <button className="btn panic" disabled={word !== 'EFFACER'} onClick={panic}>Tout effacer</button>
+    </>
   )
 }

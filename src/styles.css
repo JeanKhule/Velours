@@ -227,7 +227,6 @@ h2 { font: italic 400 1.5rem var(--title); margin: 0 0 8px; text-align: center; 
 .ghost.hot { border-color: var(--red); color: var(--rose); }
 .ghost.danger { border-color: var(--strap); color: var(--rose); }
 .btn.panic { background: var(--strap); }
-.panic-zone { margin-top: 24px; max-width: 240px; }
 
 .input {
   width: 100%;
