@@ -173,6 +173,7 @@ function Setup({ onDone }: { onDone: (s: Session) => void }) {
     <Screen>
       <Logo />
       <h1>Bienvenue</h1>
+      <span className="harness" aria-hidden />
       <p className="lead">Un pseudo, un code. Aucun e‑mail, aucun compte : tout reste chiffré sur ce téléphone.</p>
       <form className="card stack" onSubmit={submit}>
         <label className="field">
@@ -209,6 +210,7 @@ function Unlock({ onDone }: { onDone: (s: Session) => void }) {
     <Screen>
       <Logo size={96} />
       <h1>Entre ton code</h1>
+      <span className="harness" aria-hidden />
       {incoming.code && <p className="lead">Un message t'attend.</p>}
       <form className="card stack" onSubmit={submit}>
         <PinInput label="Code PIN" value={pin} onChange={setPin} autoFocus />
@@ -231,6 +233,7 @@ function RoleChoice({ pseudo, onPick }: { pseudo: string; onPick: (r: Role) => v
       <Logo size={56} />
       <p className="script">{new Date().getHours() < 18 ? 'Bonjour' : 'Bonsoir'} {pseudo}</p>
       <h1>Qui es‑tu aujourd'hui ?</h1>
+      <span className="harness" aria-hidden />
       <div className="stack roles">
         {ROLES.map(({ role, line }) => (
           <button key={role} className="role" onClick={() => onPick(role)}>
@@ -420,6 +423,7 @@ function Home({ session, role, onLock }: { session: Session; role: Role; onLock:
 
       <section className="panel" key={tab}>
         <h1>{tab}</h1>
+        <span className="harness" aria-hidden />
         {!partner ? (
           <Locked onPair={() => setSheet('pair')} />
         ) : tab === 'Question du jour' ? (
