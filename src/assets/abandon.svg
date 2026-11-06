@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 900" preserveAspectRatio="xMidYMid slice">
+  <!-- Semi-abstract, like an out-of-focus boudoir photo: curves of skin caught by candlelight in the dark,
+       a red silk ribbon running through, a few blurred candle flames. Nothing a passer-by could name. -->
+  <defs>
+    <radialGradient id="heat" cx=".15" cy=".92" r=".75"><stop offset="0" stop-color="#d4163c" stop-opacity=".42"/><stop offset=".55" stop-color="#7a0b25" stop-opacity=".14"/><stop offset="1" stop-color="#7a0b25" stop-opacity="0"/></radialGradient>
+    <radialGradient id="plum" cx=".85" cy=".08" r=".6"><stop offset="0" stop-color="#5a1638" stop-opacity=".45"/><stop offset="1" stop-color="#5a1638" stop-opacity="0"/></radialGradient>
+    <linearGradient id="flesh" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#f3c9b8" stop-opacity=".34"/><stop offset=".5" stop-color="#b85a5e" stop-opacity=".2"/><stop offset="1" stop-color="#3a0c1c" stop-opacity="0"/></linearGradient>
+    <linearGradient id="flesh2" x1="1" y1="0" x2="0" y2="0"><stop offset="0" stop-color="#f3c9b8" stop-opacity=".28"/><stop offset=".6" stop-color="#a84a55" stop-opacity=".16"/><stop offset="1" stop-color="#3a0c1c" stop-opacity="0"/></linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe2d6" stop-opacity="0"/><stop offset=".35" stop-color="#ffe2d6" stop-opacity=".55"/><stop offset=".7" stop-color="#f08a8a" stop-opacity=".35"/><stop offset="1" stop-color="#d4163c" stop-opacity="0"/></linearGradient>
+    <filter id="deep" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="28"/></filter>
+    <filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3.5"/></filter>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="7"/></filter>
+  </defs>
+  <rect width="400" height="900" fill="#0d0609"/>
+  <rect width="400" height="900" fill="url(#plum)"/>
+  <rect width="400" height="900" fill="url(#heat)"/>
+
+  <!-- Right: a waist sinking in, then the full curve of a hip, rim-lit along its edge. -->
+  <path d="M410 90 C330 190 290 300 322 410 C352 510 248 610 268 750 C280 830 340 890 410 910 Z" fill="url(#flesh)" filter="url(#deep)"/>
+  <path d="M410 90 C330 190 290 300 322 410 C352 510 248 610 268 750 C280 830 340 890 410 910" fill="none" stroke="url(#rim)" stroke-width="10" stroke-opacity=".8" filter="url(#glow)"/>
+  <path d="M410 90 C330 190 290 300 322 410 C352 510 248 610 268 750 C280 830 340 890 410 910" fill="none" stroke="url(#rim)" stroke-width="1" stroke-opacity=".4"/>
+
+  <!-- Left, low: one round curve in shadow, lit from below by the red. -->
+  <path d="M-20 520 C90 500 165 590 146 690 C128 780 40 812 -20 800 Z" fill="url(#flesh2)" filter="url(#deep)"/>
+  <path d="M-20 520 C90 500 165 590 146 690 C128 780 40 812 -20 800" fill="none" stroke="#f3c9b8" stroke-opacity=".2" stroke-width="9" filter="url(#glow)"/>
+
+  <!-- The red silk ribbon, loose, crossing the whole page (the same red as the bows on the sliders). -->
+  <path d="M420 470 C330 500 300 590 228 600 C150 612 120 560 60 600 C10 634 0 700 -20 730" fill="none" stroke="#d4163c" stroke-opacity=".35" stroke-width="10" filter="url(#glow)"/>
+  <path d="M420 470 C330 500 300 590 228 600 C150 612 120 560 60 600 C10 634 0 700 -20 730" fill="none" stroke="#e8304f" stroke-opacity=".55" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M420 473 C330 503 300 593 228 603 C150 615 120 563 60 603" fill="none" stroke="#ffd0d6" stroke-opacity=".22" stroke-width=".7"/>
+
+  <!-- Blurred candle flames. -->
+  <g fill="#ffcf9e" filter="url(#glow)">
+    <circle cx="62" cy="120" r="9" fill-opacity=".16"/>
+    <circle cx="96" cy="160" r="5" fill-opacity=".12"/>
+    <circle cx="352" cy="640" r="11" fill-opacity=".1"/>
+    <circle cx="210" cy="820" r="7" fill-opacity=".12"/>
+    <circle cx="180" cy="60" r="4" fill-opacity=".14"/>
+  </g>
+</svg>

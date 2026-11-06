@@ -48,6 +48,12 @@ export default function App() {
     hasProfile().then((yes) => setStage(yes ? 'locked' : 'setup'))
   }, [])
 
+  // Discretion: until the PIN is entered, the background stays an unrecognisable blur.
+  useEffect(() => {
+    document.body.dataset.locked = String(stage !== 'role' && stage !== 'home')
+  }, [stage])
+
+
   // A web app cannot see the phone being locked: ask the PIN again after LOCK_AFTER in the background
   // (or on a cold start, since the keys only live in memory). A quick hop to Messages keeps it open.
   useEffect(() => {
@@ -236,7 +242,7 @@ function RoleChoice({ pseudo, onPick }: { pseudo: string; onPick: (r: Role) => v
       <span className="harness" aria-hidden />
       <div className="stack roles">
         {ROLES.map(({ role, line }) => (
-          <button key={role} className="role" onClick={() => onPick(role)}>
+          <button key={role} className={`role role-${role.toLowerCase()}`} onClick={() => onPick(role)}>
             <strong>{role}</strong>
             <span>{line}</span>
           </button>
@@ -421,7 +427,7 @@ function Home({ session, role, onLock }: { session: Session; role: Role; onLock:
         </button>
       )}
 
-      <section className="panel" key={tab}>
+      <section className="panel" key={tab} data-tab={tab}>
         <h1>{tab}</h1>
         <span className="harness" aria-hidden />
         {!partner ? (

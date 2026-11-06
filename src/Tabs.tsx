@@ -23,7 +23,7 @@ const byAt = (a: Ev, b: Ev) => a.at.localeCompare(b.at)
 // Leather strap with 4 eyelets, filled in red latex up to a heart-padlock cursor.
 function Slider(props: { label: string; value: number; onChange: (n: number) => void; levels?: string[] }) {
   return (
-    <label className="slider">
+    <label className="slider" data-level={props.value}>
       <span>{props.label}</span>
       <div className="track" style={{ '--p': (props.value - 1) / 3 } as CSSProperties}>
         <i className="fill" />
@@ -150,7 +150,7 @@ export function TaskTab({ ctx }: { ctx: Ctx }) {
       )}
       {!stopped && todays.length === 0 && !canRequestMood(state.events, state.me.id, role, partnerRole, today) && (
         <div className="card arch">
-          <p>En attente d'une demande de mood de {state.partner!.pseudo}.</p>
+          <p>Rien ne presse… {state.partner!.pseudo} choisira le moment de te demander dans quel état tu es.</p>
         </div>
       )}
       {/* The safeword refuses a task: only once one has actually been received. */}
@@ -181,7 +181,7 @@ function LoopCard({ loop: l, ctx }: { loop: Loop; ctx: Ctx }) {
 
   if (l.status === 'mood')
     return giver ? (
-      <div className="card arch"><p>Demande envoyée. En attente du mood de {them}.</p></div>
+      <div className="card arch"><p>Demande envoyée. Tu vas bientôt savoir dans quel état est {them}.</p></div>
     ) : (
       <div className="card stack-in">
         <p className="kicker">{them} demande ton mood</p>
@@ -219,7 +219,7 @@ function LoopCard({ loop: l, ctx }: { loop: Loop; ctx: Ctx }) {
     ) : (
       <>
         {moodCard}
-        <div className="card arch"><p>Ton mood est parti. {them} prépare ta tâche…</p></div>
+        <div className="card arch"><p>Ton envie est entre ses mains. {them} prépare ce qui t'attend…</p></div>
       </>
     )
 
@@ -235,7 +235,7 @@ function LoopCard({ loop: l, ctx }: { loop: Loop; ctx: Ctx }) {
       return (
         <>
           {taskCard}
-          <div className="card arch"><p>{them} a jusqu'à minuit pour la réaliser.</p></div>
+          <div className="card arch"><p>{them} a jusqu'à la fin du jour pour t'obéir.</p></div>
         </>
       )
     if (!doing)
@@ -457,7 +457,7 @@ export function History({ ctx }: { ctx: Ctx }) {
         )
       })}
 
-      {!given.length && !received.length && !days.length && <div className="card arch"><p>Rien encore. L'histoire commence aujourd'hui.</p></div>}
+      {!given.length && !received.length && !days.length && <div className="card arch"><p>Rien encore. Tout reste à écrire… et à vivre.</p></div>}
     </div>
   )
 }
