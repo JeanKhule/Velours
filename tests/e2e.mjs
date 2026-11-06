@@ -296,6 +296,31 @@ try {
     assert.match(await panel(A), /Que tu me fasses attendre\.[\s\S]*Ce soir \?/)
   })
 
+  await check('Longue soirée : liens courts (seul le non-reçu repart), lien perdu rattrapé, lien coupé signalé', async () => {
+    const say = async (p, i, text) => {
+      await p.context().clock.setFixedTime(new Date(DAY(16).getTime() + 60_000 + i * 1000)) // one message per second
+      await p.getByPlaceholder('Écris…').fill(text)
+      await btn(p, 'Ajouter').click()
+    }
+    const long = (i) => `Message ${i} : tu sais ce que j'ai envie de te faire ce soir quand tu rentreras, je vais prendre tout mon temps avec toi.`
+    for (let i = 0; i < 30; i++) await say(A, i, long(i))
+    const big = await send(A)
+    // A messenger that cuts the link: clearly reported, nothing applied.
+    assert.match(await deliver(B, big.slice(0, Math.floor(big.length / 2))), /Lien incomplet/)
+    assert.doesNotMatch(await panel(B), /Message 29 :/)
+    await deliver(B, big)
+    assert.match(await panel(B), /Message 0 :[\s\S]*Message 29 :/)
+    await deliver(A, await send(B)) // B's next link tells A what arrived
+    await say(A, 30, 'Perdu en route.')
+    await send(A) // this link is never delivered
+    await say(A, 31, 'Et celui-ci arrive.')
+    const small = await send(A)
+    assert.ok(small.length < 900 && small.length < big.length / 3, `${small.length} vs ${big.length}`)
+    await deliver(B, small)
+    assert.match(await panel(B), /Perdu en route\.[\s\S]*Et celui-ci arrive\./)
+    await deliver(A, await send(B))
+  })
+
   await check('Tâche : demande de mood (Dom)', async () => {
     await tab(A, 'Tâche du jour')
     await btn(A, 'Demander ton mood').click()

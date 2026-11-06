@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import logoSvg from './logo.svg?raw'
 import { createProfile, hasProfile, save, unlock, wipe, type Session, type State } from './vault'
-import { extractCode, openEnvelope, safetyCode, sealEnvelope, sharedKey } from './envelope'
+import { Incomplete, extractCode, openEnvelope, safetyCode, sealEnvelope, sharedKey } from './envelope'
 import { dayOf, prune, tokens, type Ev, type NewEv, type Role } from './logic'
 import { MyQr, Pair } from './Pair'
 import { Contract, History, QuestionTab, TaskTab } from './Tabs'
@@ -9,8 +9,10 @@ import { Contract, History, QuestionTab, TaskTab } from './Tabs'
 type Stage = 'loading' | 'setup' | 'locked' | 'role' | 'home'
 const LOCK_AFTER = 5 * 60_000
 
-// What one phone sends the other: its identity, today's role and its own recent events.
-type Payload = { v: 1; from: string; pseudo: string; role: Role; day: string; events: Ev[] }
+// What one phone sends the other: its identity, today's role, its own events the other has not confirmed yet,
+// and "seen": the newest of the other's events it holds (so the other stops resending them).
+type Payload = { v: 1; from: string; pseudo: string; role: Role; day: string; events: Ev[]; seen?: string }
+const newest = (events: Ev[], by: string) => events.reduce((m, e) => (e.by === by && e.at > m ? e.at : m), '') || undefined
 
 export type Ctx = {
   state: State
@@ -289,7 +291,8 @@ function Home({ session, role, onLock }: { session: Session; role: Role; onLock:
     let p: Payload
     try {
       p = await openEnvelope<Payload>(key, extractCode(code))
-    } catch {
+    } catch (e) {
+      if (e instanceof Incomplete) return setNotice(`Lien incomplet : ta messagerie l'a coupé. Demande à ${partner.pseudo} de te le renvoyer.`)
       return setNotice("Ce message ne vient pas de ton partenaire, ou il est abîmé.")
     }
     if (p.from !== partner.id) return setNotice("Ce message ne vient pas de ton partenaire.")
@@ -303,7 +306,7 @@ function Home({ session, role, onLock }: { session: Session; role: Role; onLock:
     update((s) => ({
       ...s,
       events: [...s.events, ...fresh],
-      partner: s.partner && { ...s.partner, pseudo: p.pseudo, role: p.role, roleDay: p.day },
+      partner: s.partner && { ...s.partner, pseudo: p.pseudo, role: p.role, roleDay: p.day, seen: p.seen && !(p.seen < (s.partner.seen ?? '')) ? p.seen : s.partner.seen },
     }))
     setNotice(fresh.length ? `Message de ${p.pseudo} reçu.` : `Rien de nouveau de ${p.pseudo}.`)
   }
@@ -343,8 +346,12 @@ function Home({ session, role, onLock }: { session: Session; role: Role; onLock:
       pseudo: state.profile.pseudo,
       role,
       day: today,
-      // ponytail: resends the last two days (plus signatures and struck tokens) so a lost link heals itself.
-      events: state.events.filter((e) => e.by === me.id && (e.day >= since || e.type === 'sign' || e.type === 'tokenUse')),
+      seen: newest(state.events, partner.id),
+      // Everything the partner has not confirmed yet, so a lost link heals itself with the next one.
+      // ">=" resends same-millisecond events (deduplicated on arrival). Before any confirmation: the last two days.
+      events: state.events.filter((e) =>
+        e.by === me.id && (partner.seen ? e.at >= partner.seen : e.day >= since || e.type === 'sign' || e.type === 'tokenUse'),
+      ),
     }
     setLink(`${location.origin}${location.pathname}#m=${await sealEnvelope(key, payload)}`)
     setSheet('send')

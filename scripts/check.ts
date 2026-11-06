@@ -1,7 +1,7 @@
 // Run: node scripts/check.ts — crypto, envelopes and game rules.
 import assert from 'node:assert'
 import { deriveKey, seal, unseal } from '../src/crypto.ts'
-import { newKeyPair, sharedKey, sealEnvelope, openEnvelope, safetyCode, extractCode } from '../src/envelope.ts'
+import { newKeyPair, sharedKey, sealEnvelope, openEnvelope, safetyCode, extractCode, Incomplete } from '../src/envelope.ts'
 import { loops, tokens, canRequestMood, contractLine, questionOfDay, prune, type Ev } from '../src/logic.ts'
 
 // Vault: right PIN opens, wrong PIN fails, nothing in clear.
@@ -19,6 +19,11 @@ assert.deepStrictEqual(await openEnvelope(await sharedKey(b.priv, a.pub), env), 
 await assert.rejects(openEnvelope(await sharedKey(eve.priv, a.pub), env))
 assert.strictEqual(await safetyCode(a.pub, b.pub), await safetyCode(b.pub, a.pub))
 assert.strictEqual(extractCode(`https://x.github.io/bm/#m=${env}`), env)
+// A link cut short by a messenger is reported as incomplete, not as foreign.
+const kb = await sharedKey(b.priv, a.pub)
+for (const cut of [1, 10, Math.floor(env.length / 2)]) await assert.rejects(openEnvelope(kb, env.slice(0, -cut)), Incomplete)
+// A tampered (not shortened) link is not reported as incomplete.
+await assert.rejects(openEnvelope(kb, env.slice(0, 20) + (env[20] === 'A' ? 'B' : 'A') + env.slice(21)), (e) => !(e instanceof Incomplete))
 
 // Rules.
 let n = 0

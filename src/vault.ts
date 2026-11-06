@@ -3,7 +3,7 @@ import { newKeyPair } from './envelope'
 import type { Ev, Role } from './logic'
 
 // One IndexedDB store, one encrypted record. Nothing readable without the PIN.
-export type Partner = { id: string; pseudo: string; pub: string; pairedAt: string; role?: Role; roleDay?: string }
+export type Partner = { id: string; pseudo: string; pub: string; pairedAt: string; role?: Role; roleDay?: string; seen?: string } // seen: newest of my events the partner has confirmed
 export type State = {
   profile: { pseudo: string; createdAt: string }
   me: { id: string; priv: JsonWebKey; pub: string }

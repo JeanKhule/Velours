@@ -33,6 +33,15 @@ async function pipe(bytes: Uint8Array, stream: CompressionStream | Decompression
   return new Uint8Array(await new Response(new Blob([bytes as BlobPart]).stream().pipeThrough(stream)).arrayBuffer())
 }
 
+// The sealed code starts with its own length (3 base64url chars), so a link cut short by a messenger
+// is told apart from a foreign or tampered one.
+const HEAD = 3
+const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
+const lenEnc = (n: number) => B64[(n >> 12) & 63] + B64[(n >> 6) & 63] + B64[n & 63]
+const lenOf = (s: string) => [...s].reduce((n, c) => n * 64 + B64.indexOf(c), 0)
+
+export class Incomplete extends Error {}
+
 export async function sealEnvelope(key: CryptoKey, value: unknown): Promise<string> {
   const packed = await pipe(new TextEncoder().encode(JSON.stringify(value)), new CompressionStream('deflate-raw'))
   const iv = crypto.getRandomValues(new Uint8Array(12))
@@ -40,14 +49,27 @@ export async function sealEnvelope(key: CryptoKey, value: unknown): Promise<stri
   const out = new Uint8Array(12 + ct.length)
   out.set(iv)
   out.set(ct, 12)
-  return b64u.enc(out)
+  const body = b64u.enc(out)
+  return lenEnc(body.length) + body
 }
 
-// Throws if the envelope was not sealed with this key or was tampered with.
-export async function openEnvelope<T>(key: CryptoKey, sealed: string): Promise<T> {
-  const raw = b64u.dec(sealed)
+async function open(key: CryptoKey, body: string) {
+  const raw = b64u.dec(body)
   const packed = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: raw.slice(0, 12) }, key, raw.slice(12))
   return JSON.parse(new TextDecoder().decode(await pipe(new Uint8Array(packed), new DecompressionStream('deflate-raw'))))
+}
+
+// Throws Incomplete if the link was cut short, another error if it was not sealed with this key or was tampered with.
+export async function openEnvelope<T>(key: CryptoKey, sealed: string): Promise<T> {
+  const want = lenOf(sealed.slice(0, HEAD)), have = sealed.length - HEAD
+  if (want === have) return open(key, sealed.slice(HEAD))
+  // ponytail: codes sealed before the length header existed; drop this fallback once old links are gone.
+  try {
+    return await open(key, sealed)
+  } catch (e) {
+    if (want > have && want < 60_000) throw new Incomplete()
+    throw e
+  }
 }
 
 // Accepts a full link (…#m=XXX), "m=XXX" or the bare code.
