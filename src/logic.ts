@@ -123,3 +123,26 @@ export const TEMPS = [
   "J'ai du temps, prends le temps de me dresser",
   'Tout mon temps est à toi, use et abuse de moi',
 ]
+
+// Partner news worth a pop-up, most actionable first. Only one is ever shown at a time.
+const ALERTS = ['safeword', 'moodRequest', 'task', 'mood', 'done', 'tokenUse', 'question', 'answer', 'sign', 'chat'] as const
+export type AlertKind = (typeof ALERTS)[number]
+export type Alert = { kind: AlertKind; ev: Ev; status?: LoopStatus }
+
+// With `fresh` (events just received): the best of them. Without: only what still waits for me (after a PIN unlock).
+export function alertFor(events: Ev[], me: string, today: string, fresh?: Ev[]): Alert | undefined {
+  const ls = loops(events, today)
+  const statusOf = (e: Ev) => ls.find((l) => l.req.id === ('req' in e ? e.req : e.id))?.status
+  const live = (e: Ev) => {
+    const s = statusOf(e)
+    if (e.type === 'moodRequest') return s === 'mood'
+    if (e.type === 'task') return s === 'encours'
+    if (e.type === 'mood') return s === 'tache' || (!!fresh && s === 'sanstache')
+    return !!fresh && (e.type !== 'safeword' || e.day === today)
+  }
+  const rank = (e: Ev) => ALERTS.indexOf(e.type as AlertKind)
+  const best = (fresh ?? events)
+    .filter((e) => e.by !== me && rank(e) >= 0 && live(e))
+    .sort((a, b) => rank(a) - rank(b) || b.at.localeCompare(a.at))[0]
+  return best && { kind: best.type as AlertKind, ev: best, status: statusOf(best) }
+}

@@ -418,6 +418,11 @@ h2 { font-size: 1.7rem; line-height: 1.15; }
   gap: 14px;
   animation: rise 0.5s var(--slow);
 }
+/* Partner pop-up: the news in the title, one red way in. The safeword one stays plain: no red, no flourish. */
+.sheet.alert { border-top: 2px solid var(--red); }
+.sheet.alert h2::before { content: "Nouvelle"; display: block; font: 1.5rem var(--script); color: var(--red); }
+.sheet.sober { border-top-color: var(--line-strong); }
+.sheet.sober h2::before { content: none; }
 .manual summary { cursor: pointer; color: var(--muted); padding: 8px 0; font-weight: 500; }
 .manual[open] { display: flex; flex-direction: column; gap: 10px; }
 

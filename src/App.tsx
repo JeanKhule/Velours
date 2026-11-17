@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'rea
 import logoSvg from './logo.svg?raw'
 import { createProfile, hasProfile, save, unlock, wipe, type Session, type State } from './vault'
 import { Incomplete, extractCode, openEnvelope, safetyCode, sealEnvelope, sharedKey } from './envelope'
-import { dayOf, prune, tokens, type Ev, type NewEv, type Role } from './logic'
+import { alertFor, dayOf, prune, tokens, type Alert, type Ev, type NewEv, type Role } from './logic'
 import { MyQr, Pair } from './Pair'
 import { Contract, History, QuestionTab, TaskTab } from './Tabs'
 
@@ -266,6 +266,7 @@ function Home({ session, role, onLock }: { session: Session; role: Role; onLock:
   const [link, setLink] = useState('')
   const [notice, setNotice] = useState('')
   const [unlinking, setUnlinking] = useState(false)
+  const [alert, setAlert] = useState<Alert>()
   const today = dayOf()
   const { me, partner } = state
   const partnerRole = partner?.roleDay === today ? partner.role : undefined
@@ -279,6 +280,11 @@ function Home({ session, role, onLock }: { session: Session; role: Role; onLock:
       save(session)
       return next
     })
+
+  // After the PIN: what still waits for me (a link being opened brings its own pop-up instead).
+  useEffect(() => {
+    if (partner && !incoming.code) setAlert(alertFor(state.events, me.id, today))
+  }, [])
 
   useEffect(() => {
     setKey(null)
@@ -303,6 +309,7 @@ function Home({ session, role, onLock }: { session: Session; role: Role; onLock:
       update((s) => ({ ...s, partner: undefined }))
       return setNotice(`${partner.pseudo} a délié le couple.`)
     }
+    setAlert(alertFor(prune([...state.events, ...fresh]), me.id, today, fresh))
     update((s) => ({
       ...s,
       events: [...s.events, ...fresh],
@@ -458,6 +465,18 @@ function Home({ session, role, onLock }: { session: Session; role: Role; onLock:
         ))}
       </nav>
 
+      {alert && !sheet && (
+        <AlertSheet
+          alert={alert}
+          them={partner?.pseudo ?? ''}
+          today={today}
+          onGo={(t) => {
+            setTab(t)
+            setAlert(undefined)
+          }}
+          onClose={() => setAlert(undefined)}
+        />
+      )}
       {sheet === 'send' && (
         <SendSheet
           link={link}
@@ -521,15 +540,46 @@ const Locked = ({ onPair }: { onPair: () => void }) => (
   </div>
 )
 
-export function Sheet({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
+export function Sheet(props: { title: string; children: ReactNode; onClose: () => void; className?: string; close?: string }) {
+  const { title, children, onClose } = props
   return (
     <div className="sheet-bg" onClick={onClose}>
-      <div className="sheet" role="dialog" aria-label={title} onClick={(e) => e.stopPropagation()}>
+      <div className={`sheet ${props.className ?? ''}`} role="dialog" aria-label={title} onClick={(e) => e.stopPropagation()}>
         <h2>{title}</h2>
         {children}
-        <button className="ghost wide" onClick={onClose}>Fermer</button>
+        <button className="ghost wide" onClick={onClose}>{props.close ?? 'Fermer'}</button>
       </div>
     </div>
+  )
+}
+
+// One pop-up per received link: what happened, and one button straight to where to act.
+function alertCopy({ kind, ev, status }: Alert, them: string, today: string): [title: string, text: string, cta: string, tab: Tab] {
+  const tache = ev.day === today ? 'Tâche du jour' : 'Historique'
+  switch (kind) {
+    case 'safeword': return ['Safeword', `${them} a prononcé le safeword. Le jeu s'arrête pour aujourd'hui. Prenez soin l'un de l'autre, et parlez-en.`, 'Voir', 'Tâche du jour']
+    case 'moodRequest': return [`${them} demande ton mood`, 'Dis-lui dans quel état tu es, et combien de temps tu lui offres.', 'Donner mon mood', 'Tâche du jour']
+    case 'task': return ['Une tâche t’attend', `${them} a décidé de ce que tu vas faire. À réaliser avant minuit.`, 'Voir la tâche', tache]
+    case 'mood': return status === 'sanstache'
+      ? [`Mood de ${them} reçu`, "Même rôle aujourd'hui : mood partagé, sans tâche.", 'Voir son mood', tache]
+      : [`Mood de ${them} reçu`, "Son envie est entre tes mains. À toi de choisir ce qui l'attend.", 'Choisir une tâche', tache]
+    case 'done': return ['Tâche accomplie', `${them} a obéi et t'envoie son compte rendu.`, 'Lire son compte rendu', tache]
+    case 'tokenUse': return ['Token levé', `${them} a décompté un de tes tokens punition.`, "Voir l'historique", 'Historique']
+    case 'question': return [`${them} pose la question du jour`, 'text' in ev ? ev.text : '', 'Répondre', 'Question du jour']
+    case 'answer': return [`${them} a répondu`, 'Sa réponse à la question du jour est arrivée.', 'Voir la question', 'Question du jour']
+    case 'sign': return [`${them} a signé le contrat`, 'Sa signature est posée, datée.', 'Voir le contrat', 'Contrat']
+    case 'chat': return [`Message de ${them}`, 'Un mot dans la messagerie du jour.', 'Lire', 'Question du jour']
+  }
+}
+
+function AlertSheet(props: { alert: Alert; them: string; today: string; onGo: (t: Tab) => void; onClose: () => void }) {
+  const [title, text, cta, tab] = alertCopy(props.alert, props.them, props.today)
+  const sober = props.alert.kind === 'safeword'
+  return (
+    <Sheet title={title} className={sober ? 'alert sober' : 'alert'} close={sober ? 'Fermer' : 'Plus tard'} onClose={props.onClose}>
+      {text && <p className="hint left">{text}</p>}
+      <button className={sober ? 'ghost wide' : 'btn'} onClick={() => props.onGo(tab)}>{cta}</button>
+    </Sheet>
   )
 }
 

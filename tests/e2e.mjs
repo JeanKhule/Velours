@@ -74,6 +74,23 @@ async function open(p, pin, role) {
   await p.locator('.roles, .home').first().waitFor()
   if (await p.locator('.roles').count()) await btn(p, new RegExp(`^${role}`)).click()
   await p.locator('.home').waitFor()
+  await p.waitForTimeout(150)
+  await popup(p)
+}
+
+// The partner pop-up, if any: its title is kept in p.alert, then it is dismissed (last button) unless `keep`.
+async function popup(p, keep = false) {
+  const s = p.locator('.sheet.alert')
+  p.alert = (await s.count()) ? await s.locator('h2').innerText() : ''
+  if (p.alert && !keep) await s.getByRole('button').last().click()
+  return p.alert
+}
+// Follows the pop-up's main button, then clears the notice under it.
+async function follow(p, cta, tabName) {
+  assert.strictEqual(await p.locator('.sheet').count(), 1, 'a single pop-up')
+  await p.locator('.sheet.alert').getByRole('button', { name: cta, exact: true }).click()
+  await p.locator('.panel h1', { hasText: tabName }).waitFor()
+  await p.locator('.notice').click()
 }
 
 // The sealed-link sheet: copy the link and close it.
@@ -86,12 +103,13 @@ async function grab(p) {
 const send = async (p) => (await p.locator('.sync button', { hasText: 'Envoyer' }).click(), grab(p))
 
 // Delivers a link like a messenger tap on an open app (hash change).
-async function deliver(p, link) {
+async function deliver(p, link, keep = false) {
   await p.evaluate((h) => (location.hash = h), new URL(link).hash.slice(1))
   const n = p.locator('.notice')
   await n.waitFor()
   const text = await n.innerText()
-  await n.click()
+  await popup(p, keep)
+  if (!(keep && p.alert)) await n.click()
   return text
 }
 
@@ -281,6 +299,7 @@ try {
     await A.getByPlaceholder('Ta réponse (courte)').fill('Te voir attendre à genoux.')
     await btn(A, 'Répondre').click()
     await deliver(B, await send(A))
+    assert.strictEqual(B.alert, 'Maitre a répondu', 'pop-up : réponse reçue')
     const before = await panel(B)
     assert.match(before, /Maitre a répondu\. Réponds pour découvrir/)
     assert.doesNotMatch(before, /genoux/)
@@ -293,6 +312,7 @@ try {
     await B.getByPlaceholder('Écris…').fill('Ce soir ?')
     await btn(B, 'Ajouter').click()
     await deliver(A, await send(B))
+    assert.strictEqual(A.alert, 'Velours a répondu', 'pop-up : la réponse passe avant le simple message')
     assert.match(await panel(A), /Que tu me fasses attendre\.[\s\S]*Ce soir \?/)
   })
 
@@ -309,6 +329,7 @@ try {
     assert.match(await deliver(B, big.slice(0, Math.floor(big.length / 2))), /Lien incomplet/)
     assert.doesNotMatch(await panel(B), /Message 29 :/)
     await deliver(B, big)
+    assert.strictEqual(B.alert, 'Message de Maitre', 'pop-up : 30 messages → un seul pop-up')
     assert.match(await panel(B), /Message 0 :[\s\S]*Message 29 :/)
     await deliver(A, await send(B)) // B's next link tells A what arrived
     await say(A, 30, 'Perdu en route.')
@@ -324,9 +345,21 @@ try {
   await check('Tâche : demande de mood (Dom)', async () => {
     await tab(A, 'Tâche du jour')
     await btn(A, 'Demander ton mood').click()
-    await deliver(B, await grab(A))
-    await tab(B, 'Tâche du jour')
+    await deliver(B, await grab(A), true)
+    assert.strictEqual(B.alert, 'Maitre demande ton mood')
+    await follow(B, 'Donner mon mood', 'Tâche du jour') // B was on « Question du jour »
     assert.match(await panel(B), /Maitre demande ton mood/)
+  })
+
+  await check('Pop-up : lien renvoyé sans nouveauté → pas de pop-up ; mood attendu → pop-up après le PIN', async () => {
+    await deliver(B, await send(A))
+    assert.strictEqual(B.alert, '')
+    await open(B, PIN_B, 'Sub')
+    assert.strictEqual(B.alert, 'Maitre demande ton mood')
+    await open(A, PIN_A, 'Dom')
+    assert.strictEqual(A.alert, '', 'rien en attente chez celui qui a demandé')
+    await tab(A, 'Tâche du jour')
+    await tab(B, 'Tâche du jour')
   })
 
   await check('Tâche : une seule demande de mood par jour', async () => {
@@ -340,14 +373,22 @@ try {
     assert.match(t, /trempé·e \/ raide/)
     assert.match(t, /petite pause salace/)
     await btn(B, 'Valider').click()
-    await deliver(A, await grab(B))
+    const link = await grab(B)
+    await tab(A, 'Contrat')
+    await deliver(A, link, true)
+    assert.strictEqual(A.alert, 'Mood de Velours reçu', 'pop-up : mood reçu')
+    await follow(A, 'Choisir une tâche', 'Tâche du jour')
     assert.match(await panel(A), /Tâche à exécuter/)
   })
 
   await check('Tâche : rédaction et envoi', async () => {
     await A.getByPlaceholder('Écris la tâche, adaptée à ce mood').fill('Porte le collier rouge ce soir.')
     await btn(A, 'Envoyer la tâche').click()
-    await deliver(B, await grab(A))
+    const link = await grab(A)
+    await tab(B, 'Historique')
+    await deliver(B, link, true)
+    assert.strictEqual(B.alert, 'Une tâche t’attend', 'pop-up : tâche reçue')
+    await follow(B, 'Voir la tâche', 'Tâche du jour')
     assert.match(await panel(B), /Porte le collier rouge ce soir\./)
   })
 
@@ -362,7 +403,10 @@ try {
     const link = await grab(B)
     assert.match(await panel(B), /Ton ressenti est parti chez Maitre/)
     assert.doesNotMatch(await panel(B), /Plu 4/)
-    await deliver(A, link)
+    await tab(A, 'Question du jour')
+    await deliver(A, link, true)
+    assert.strictEqual(A.alert, 'Tâche accomplie', 'pop-up : compte rendu reçu')
+    await follow(A, 'Lire son compte rendu', 'Tâche du jour')
     assert.match(await panel(A), /Plu 4\/4 · Pendant 3\/4 · Après 4\/4/)
   })
 
@@ -390,6 +434,7 @@ try {
     }
     const la = await grab(A), lb = await grab(B)
     await deliver(B, la)
+    assert.strictEqual(B.alert, 'Maitre a signé le contrat', 'pop-up : signature reçue')
     await deliver(A, lb)
     for (const p of [A, B]) {
       assert.strictEqual(await p.locator('.sigs svg').count(), 2)
@@ -410,6 +455,7 @@ try {
     await A.getByPlaceholder("Ta question pour aujourd'hui").fill('Quel est ton plus beau souvenir avec moi ?')
     await btn(A, 'Poser cette question').click()
     await deliver(B, await send(A))
+    assert.strictEqual(B.alert, 'Maitre pose la question du jour', 'pop-up : question personnalisée')
     assert.match(await B.locator('.question').textContent(), /Votre question[\s\S]*plus beau souvenir/)
   })
 
@@ -431,11 +477,17 @@ try {
     assert.match(await panel(B), /avant minuit/)
   })
 
+  await check('Pop-up : tâche pas encore faite → rappelée après le PIN, plus le lendemain', async () => {
+    await open(B, PIN_B, 'Sub')
+    assert.strictEqual(B.alert, 'Une tâche t’attend')
+  })
+
   // ----- Day 3 -----
   await check('Nouveau jour (18/10) : réouverture, PIN + rôles Dom / Sub', async () => {
     await newDay(ctxs, 18)
     await open(A, PIN_A, 'Dom')
     await open(B, PIN_B, 'Sub')
+    assert.strictEqual(B.alert, '', 'la tâche expirée ne repop pas')
   })
 
   await check('Jour 3 : tâche manquée → « non réalisée » + 1 token, compteur visible chez le puni', async () => {
@@ -450,6 +502,7 @@ try {
     assert.strictEqual(await btn(B, 'Décompter un token').count(), 0)
     await btn(A, 'Décompter un token').click()
     await deliver(B, await grab(A))
+    assert.strictEqual(B.alert, 'Token levé', 'pop-up : token décompté')
     assert.match(await B.locator('.token').innerText(), /^0 token/)
   })
 
@@ -466,7 +519,12 @@ try {
     await deliver(B, await grab(A))
     await btn(B, 'Safeword').click()
     await btn(B, /^Prononcer le safeword/).click()
-    await deliver(A, await grab(B))
+    const sw = await grab(B)
+    await tab(A, 'Historique')
+    await deliver(A, sw, true)
+    assert.strictEqual(A.alert, 'Safeword', 'pop-up : safeword')
+    assert.strictEqual(await A.locator('.sheet.alert.sober .btn').count(), 0, 'safeword : sobre, pas de bouton rouge')
+    await follow(A, 'Voir', 'Tâche du jour')
     for (const p of [A, B]) {
       assert.match(await panel(p), /Le jeu s'arrête pour aujourd'hui/)
       assert.strictEqual(await btn(p, 'Demander ton mood').count(), 0)
@@ -491,8 +549,16 @@ try {
   await check('Jour 4 : deux Switch → chacun peut lancer sa demande', async () => {
     await tab(A, 'Tâche du jour')
     await tab(B, 'Tâche du jour')
+    // Several news in one link (an answer, a message, a mood request): one pop-up, the most actionable.
+    await tab(A, 'Question du jour')
+    await A.getByPlaceholder('Ta réponse (courte)').fill('Les deux.')
+    await btn(A, 'Répondre').click()
+    await A.getByPlaceholder('Écris…').fill('Choisis.')
+    await btn(A, 'Ajouter').click()
+    await tab(A, 'Tâche du jour')
     await btn(A, 'Demander ton mood').click()
     await deliver(B, await grab(A))
+    assert.strictEqual(B.alert, 'Maitre demande ton mood', 'pop-up : le plus urgent d’abord')
     assert.match(await panel(B), /Maitre demande ton mood/)
     await btn(B, 'Demander ton mood').waitFor()
   })
@@ -516,6 +582,7 @@ try {
     await deliver(B, await grab(A))
     await btn(B, 'Valider').click()
     await deliver(A, await grab(B))
+    assert.strictEqual(A.alert, 'Mood de Velours reçu', 'pop-up : mood partagé')
     assert.match(await panel(A), /sans tâche/)
     assert.strictEqual(await A.getByPlaceholder('Écris la tâche, adaptée à ce mood').count(), 0)
   })
