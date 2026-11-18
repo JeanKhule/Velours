@@ -317,7 +317,11 @@ h2 { font-size: 1.7rem; line-height: 1.15; }
   transform-origin: 50% -6px;
   animation: sway 3s var(--ease) infinite alternate;
 }
+.token { font-family: var(--body); max-width: 46vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 .token small { font-weight: 400; opacity: 0.8; }
+.tally { justify-content: space-around; text-align: center; }
+.tally p { color: var(--muted); }
+.tally strong { display: block; font: italic 500 2.6rem/1 var(--title); color: var(--skin); }
 @keyframes sway { from { transform: rotate(-4deg); } to { transform: rotate(4deg); } }
 
 /* Partner line: a slim glass bar under the header. */

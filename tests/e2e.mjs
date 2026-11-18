@@ -490,11 +490,22 @@ try {
     assert.strictEqual(B.alert, '', 'la tâche expirée ne repop pas')
   })
 
-  await check('Jour 3 : tâche manquée → « non réalisée » + 1 token, compteur visible chez le puni', async () => {
-    assert.match(await B.locator('.token').innerText(), /^1 token/)
+  await check('Jour 3 : tâche manquée → « non réalisée » + 1 token, les deux compteurs visibles des deux côtés', async () => {
+    assert.strictEqual(await B.locator('.token').innerText(), '1 toi · 0 Maitre')
+    assert.strictEqual(await A.locator('.token').innerText(), '0 toi · 1 Velours')
     await tab(A, 'Historique')
     assert.match(await panel(A), /Non réalisée/)
     assert.match(await panel(A), /Velours doit 1 token/)
+  })
+
+  await check('Token : un toucher ouvre l’explication (comment il tombe, qui le décompte, safeword, sans limite)', async () => {
+    await B.locator('.token').click({ force: true }) // it sways forever: never "stable" for Playwright
+    const s = B.locator('.sheet.tokens')
+    assert.match(await s.locator('.tally').innerText(), /1\s*toi[\s\S]*0\s*Maitre/)
+    const t = await s.innerText()
+    for (const re of [/pas accomplie avant minuit/, /Seule la personne qui a donné la tâche/, /safeword ne coûte jamais rien/, /Pas de limite/]) assert.match(t, re)
+    await btn(B, 'Fermer').click()
+    assert.strictEqual(await B.locator('.sheet').count(), 0)
   })
 
   await check('Jour 3 : seul le donneur décompte un token', async () => {
@@ -503,7 +514,8 @@ try {
     await btn(A, 'Décompter un token').click()
     await deliver(B, await grab(A))
     assert.strictEqual(B.alert, 'Token levé', 'pop-up : token décompté')
-    assert.match(await B.locator('.token').innerText(), /^0 token/)
+    assert.strictEqual(await B.locator('.token').innerText(), '0 toi · 0 Maitre')
+    assert.strictEqual(await A.locator('.token').innerText(), '0 toi · 0 Velours')
   })
 
   await check('Jour 3 : safeword → fin du jeu pour la journée, question toujours dispo', async () => {
@@ -541,7 +553,7 @@ try {
   })
 
   await check('Jour 4 : le safeword n’a créé aucun token', async () => {
-    assert.match(await B.locator('.token').innerText(), /^0 token/)
+    assert.match(await B.locator('.token').innerText(), /^0 toi · 0 Maitre/)
     await tab(A, 'Historique')
     assert.match(await panel(A), /Safeword/)
   })

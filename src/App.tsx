@@ -261,7 +261,7 @@ function Home({ session, role, onLock }: { session: Session; role: Role; onLock:
   const [state, setState] = useState(session.state)
   const [key, setKey] = useState<CryptoKey | null>(null)
   const [tab, setTab] = useState<Tab>('Question du jour')
-  const [sheet, setSheet] = useState<'' | 'send' | 'receive' | 'settings' | 'pair' | 'reset'>('')
+  const [sheet, setSheet] = useState<'' | 'send' | 'receive' | 'settings' | 'pair' | 'reset' | 'tokens'>('')
   const taps = useRef<number[]>([])
   const [link, setLink] = useState('')
   const [notice, setNotice] = useState('')
@@ -376,7 +376,9 @@ function Home({ session, role, onLock }: { session: Session; role: Role; onLock:
   prepareSendRef.current = prepareSend
 
   const ctx: Ctx = { state, role, today, partnerRole, act }
+  // Both phones hold the same loops, so both counts are computed locally: nothing extra travels in the links.
   const myTokens = partner ? tokens(state.events, me.id, today) : 0
+  const theirTokens = partner ? tokens(state.events, partner.id, today) : 0
 
   if (sheet === 'pair')
     return (
@@ -411,9 +413,9 @@ function Home({ session, role, onLock }: { session: Session; role: Role; onLock:
           <span className="pill" title="Rôle du jour">{role}</span>
         </div>
         {partner && (
-          <span className="token" title="Tokens punition">
-            {myTokens} <small>token{myTokens > 1 ? 's' : ''}</small>
-          </span>
+          <button className="token" onClick={() => setSheet('tokens')} aria-label={`Tokens punition : toi ${myTokens}, ${partner.pseudo} ${theirTokens}`}>
+            {myTokens} <small>toi</small> · {theirTokens} <small>{partner.pseudo}</small>
+          </button>
         )}
         <button className="ghost" onClick={() => setSheet('settings')} aria-label="Réglages" title="Réglages">
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="1.6" /><path fill="none" stroke="currentColor" strokeWidth="1.6" d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" /></svg>
@@ -498,6 +500,18 @@ function Home({ session, role, onLock }: { session: Session; role: Role; onLock:
           }}
           onClose={() => setSheet('')}
         />
+      )}
+      {sheet === 'tokens' && partner && (
+        <Sheet title="Tokens punition" className="tokens" onClose={() => setSheet('')}>
+          <div className="row tally">
+            <p><strong>{myTokens}</strong> toi</p>
+            <p><strong>{theirTokens}</strong> {partner.pseudo}</p>
+          </div>
+          <p className="hint left">Une tâche reçue et pas accomplie avant minuit : un token tombe, tout seul. C'est une dette, à payer comme vous l'entendez.</p>
+          <p className="hint left">Effacer un token ? Seule la personne qui a donné la tâche le peut, depuis l'Historique, une fois la dette réglée.</p>
+          <p className="hint left">Le safeword ne coûte jamais rien : aucun token ne tombe.</p>
+          <p className="hint left">Pas de limite, et personne ne peut en ajouter à la main.</p>
+        </Sheet>
       )}
       {sheet === 'reset' && (
         <Sheet title="Réinitialiser la journée ?" onClose={() => setSheet('')}>
