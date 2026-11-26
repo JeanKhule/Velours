@@ -4,7 +4,7 @@ PWA 100 % locale (Vite + React + TypeScript). Aucun serveur, aucun compte, aucun
 
 - `npm install` puis `npm run dev` → http://localhost:5173
 - `npm run build` → `dist/` ; `npm run deploy` publie `dist/` sur la branche `gh-pages` (GitHub Pages)
-- `npm run test:e2e` : test complet à deux navigateurs (Edge), 43 vérifications
+- `npm run test:e2e` : test complet à deux navigateurs (Edge), 51 vérifications
 - `node scripts/check.ts` : chiffrement, enveloppes, règles du jeu, QR.
 
 ## Comment ça marche

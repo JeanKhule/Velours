@@ -39,7 +39,17 @@ addEventListener('hashchange', grab)
 
 // A link opened in the browser (on iPhone: always Safari, never the home-screen app) only offers the transfer.
 const installed = matchMedia('(display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone === true
-const bridgeOnly = !!incoming.code && !installed
+export const bridgeOnly = !!incoming.code && !installed
+// Bridge page: plain white, no install offer, nothing left behind in a stranger's browser.
+if (bridgeOnly) {
+  document.body.style.background = '#fff'
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', '#fff')
+  document.querySelector('link[rel=manifest]')?.remove()
+} else {
+  // The app itself keeps its logo for "Add to Home Screen" (never in the static page a link preview reads).
+  document.querySelector('link[rel=icon]')?.setAttribute('href', './icon.svg')
+  document.head.insertAdjacentHTML('beforeend', '<link rel="apple-touch-icon" href="./apple-touch-icon.png" /><meta name="apple-mobile-web-app-title" content="BM" />')
+}
 
 export default function App() {
   const [stage, setStage] = useState<Stage>('loading')
@@ -137,27 +147,21 @@ function PinInput(props: { label: string; value: string; onChange: (v: string) =
 }
 
 // Nothing is read or stored here: the message is only copied, to be received in the app.
+// Whoever opens a link by mistake only sees a blank page and one button: no name, no logo, no text.
 function Bridge() {
   const [copied, setCopied] = useState(false)
   return (
-    <Screen>
-      <Logo size={72} />
-      <h1>Message reçu</h1>
-      <p className="lead">
-        Ce lien s'est ouvert dans le navigateur, pas dans l'app. Transfère‑le, puis ouvre l'app depuis ton écran d'accueil et touche « Recevoir ».
-      </p>
-      <div className="stack">
-        <button
-          className="btn"
-          onClick={async () => {
-            await navigator.clipboard.writeText(incoming.link)
-            setCopied(true)
-          }}
-        >
-          {copied ? "Prêt : ouvre l'app ✓" : "Transférer à l'app"}
-        </button>
-      </div>
-    </Screen>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'grid', placeItems: 'center', background: '#fff' }}>
+      <button
+        style={{ all: 'revert', font: '16px system-ui, sans-serif', padding: '8px 24px' }}
+        onClick={async () => {
+          await navigator.clipboard.writeText(incoming.link)
+          setCopied(true)
+        }}
+      >
+        {copied ? '✓' : 'OK'}
+      </button>
+    </div>
   )
 }
 

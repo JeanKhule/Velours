@@ -5,13 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#0A0607" />
     <meta name="referrer" content="no-referrer" />
-    <link rel="icon" href="./icon.svg" />
-    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
-    <meta name="apple-mobile-web-app-title" content="BM" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <link rel="manifest" href="./manifest.webmanifest" />
-    <title>BM</title>
+    <!-- Neutral on purpose: a link preview (iMessage…) only shows the address. The app's own icon is added by script
+         outside the link page (src/App.tsx), and the manifest keeps it for the home screen. -->
+    <link rel="icon" href="data:," />
+    <title></title>
   </head>
   <body>
     <div id="root"></div>

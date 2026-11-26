@@ -145,7 +145,7 @@ const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--stric
 // Wait until our own app answers (and not something else on that port).
 for (let i = 0; ; i++) {
   const html = await fetch(BASE).then((r) => r.text()).catch(() => '')
-  if (html.includes('<title>BM</title>')) break
+  if (html.includes('manifest.webmanifest')) break
   if (i > 40) throw new Error(`BM n'a pas démarré sur ${BASE}`)
   await new Promise((r) => setTimeout(r, 250))
 }
@@ -654,7 +654,7 @@ try {
     await n.click()
   })
 
-  await check('Lien ouvert hors de l’app (Safari) : seul « Transférer à l’app » est proposé, même avec un profil', async () => {
+  await check('Lien ouvert hors de l’app (Safari) : page blanche neutre, un seul bouton, même avec un profil', async () => {
     const link = await send(A)
     const C = await browserB.newContext()
     await C.addInitScript(() => {
@@ -666,10 +666,13 @@ try {
     await c.locator('.roles').waitFor()
     await c.goto('about:blank')
     await c.goto(link)
-    await c.getByText('Message reçu').waitFor()
-    assert.deepStrictEqual(await c.getByRole('button').allInnerTexts(), ["Transférer à l'app"])
+    await c.getByRole('button', { name: 'OK' }).waitFor()
+    assert.strictEqual((await c.locator('body').innerText()).trim(), 'OK')
+    assert.strictEqual(await c.title(), '')
+    assert.strictEqual(await c.locator('link[rel=icon]:not([href="data:,"]), link[rel=apple-touch-icon], link[rel=manifest], meta[property^="og:"]').count(), 0)
+    assert.deepStrictEqual(await c.getByRole('button').allInnerTexts(), ['OK'])
     assert.strictEqual(await c.getByLabel('Code PIN').count(), 0)
-    await btn(c, "Transférer à l'app").click()
+    await btn(c, 'OK').click()
     assert.strictEqual(await c.evaluate(() => window.__l), link)
     await C.close()
   })
